@@ -681,6 +681,7 @@ libbitcoin_util_a_SOURCES = \
   util/fees.cpp \
   util/getuniquepath.cpp \
   util/hasher.cpp \
+  util/ioprio.cpp \
   util/sock.cpp \
   util/syserror.cpp \
   util/system.cpp \
