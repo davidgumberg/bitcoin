@@ -276,6 +276,7 @@ BITCOIN_CORE_H = \
   util/golombrice.h \
   util/hash_type.h \
   util/hasher.h \
+  util/ioprio.h \
   util/macros.h \
   util/message.h \
   util/moneystr.h \
@@ -702,6 +703,9 @@ libbitcoin_util_a_SOURCES = \
 if USE_LIBEVENT
 libbitcoin_util_a_SOURCES += util/url.cpp
 endif
+
+if HAVE_IOPRIO_SYSCALL
+libbitcoin_util_a_SOURCES += util/ioprio.cpp
 
 # cli: shared between bitcoin-cli and bitcoin-qt
 libbitcoin_cli_a_CPPFLAGS = $(AM_CPPFLAGS) $(BITCOIN_INCLUDES)

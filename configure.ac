@@ -1104,6 +1104,24 @@ AC_COMPILE_IFELSE([AC_LANG_SOURCE([
   [AC_MSG_RESULT([no])]
 )
 
+AC_MSG_CHECKING(for ioprio syscalls)
+AC_COMPILE_IFELSE([
+  AC_LANG_PROGRAM([[
+    #define _GNU_SOURCE
+    #include <unistd.h>
+    #include <sys/syscall.h>
+  ]],[[
+    int x = syscall(SYS_ioprio_get, 1, 0);
+    syscall(SYS_ioprio_set, 1, 0, x);
+  ]])
+],[
+  have_ioprio_syscall=yes
+  AC_DEFINE(HAVE_IOPRIO_SYSCALL,1,[Define this symbol if you have ioprio syscalls])
+],[
+  have_ioprio_syscall=no
+])
+AC_MSG_RESULT($have_ioprio_syscall)
+
 if test "$use_thread_local" = "yes" || test "$use_thread_local" = "auto"; then
   TEMP_LDFLAGS="$LDFLAGS"
   LDFLAGS="$TEMP_LDFLAGS $PTHREAD_CFLAGS"
@@ -1883,6 +1901,7 @@ AM_CONDITIONAL([ENABLE_BENCH], [test "$use_bench" = "yes"])
 AM_CONDITIONAL([USE_QRCODE], [test "$use_qr" = "yes"])
 AM_CONDITIONAL([USE_LCOV], [test "$use_lcov" = "yes"])
 AM_CONDITIONAL([USE_LIBEVENT], [test "$use_libevent" = "yes"])
+AM_CONDITIONAL([HAVE_IOPRIO_SYSCALL],[test "$have_ioprio_syscall" = "yes"])
 AM_CONDITIONAL([HARDEN], [test "$use_hardening" = "yes"])
 AM_CONDITIONAL([ENABLE_SSE42], [test "$enable_sse42" = "yes"])
 AM_CONDITIONAL([ENABLE_SSE41], [test "$enable_sse41" = "yes"])
