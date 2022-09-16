@@ -387,7 +387,14 @@ AC_DEFUN([_BITCOIN_QT_FIND_LIBS],[
     PKG_CHECK_MODULES([QT_NETWORK], [${qt_lib_prefix}Network${qt_lib_suffix} $qt_version], [QT_INCLUDES="$QT_NETWORK_CFLAGS $QT_INCLUDES" QT_LIBS="$QT_NETWORK_LIBS $QT_LIBS"],
                       [BITCOIN_QT_FAIL([${qt_lib_prefix}Network${qt_lib_suffix} $qt_version not found])])
   ])
-
+  BITCOIN_QT_CHECK([
+    PKG_CHECK_MODULES([QT_MULTIMEDIA], [${qt_lib_prefix}Multimedia${qt_lib_suffix} $qt_version], [QT_INCLUDES="$QT_MULTIMEDIA_CFLAGS $QT_INCLUDES" QT_LIBS="$QT_MULTIMEDIA_LIBS $QT_LIBS"],
+                      [BITCOIN_QT_FAIL([${qt_lib_prefix}Multimedia${qt_lib_suffix} $qt_version not found])])
+  ])
+  BITCOIN_QT_CHECK([
+    PKG_CHECK_MODULES([QZXING], [QZXing], [QT_INCLUDES="$QZXING_CFLAGS $QT_INCLUDES" QT_LIBS="$QZXING_LIBS $QT_LIBS"],
+                      [BITCOIN_QT_FAIL([prefix: ${qt_lib_prefix} suffix: ${qt_lib_suffix} version: $qt_version end||])])
+  ])
   BITCOIN_QT_CHECK([
     PKG_CHECK_MODULES([QT_TEST], [${qt_lib_prefix}Test${qt_lib_suffix} $qt_version], [QT_TEST_INCLUDES="$QT_TEST_CFLAGS"; have_qt_test=yes], [have_qt_test=no])
     if test "$use_dbus" != "no"; then

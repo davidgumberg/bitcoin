@@ -2,6 +2,7 @@
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
+#include "qnamespace.h"
 #if defined(HAVE_CONFIG_H)
 #include <config/bitcoin-config.h>
 #endif
@@ -14,10 +15,13 @@
 #include <qt/guiutil.h>
 #include <qt/optionsmodel.h>
 #include <qt/platformstyle.h>
+#include <qt/qrscandialog.h>
 #include <qt/walletmodel.h>
 
 #include <QApplication>
 #include <QClipboard>
+
+#include <iostream>
 
 SendCoinsEntry::SendCoinsEntry(const PlatformStyle *_platformStyle, QWidget *parent) :
     QWidget(parent),
@@ -27,6 +31,7 @@ SendCoinsEntry::SendCoinsEntry(const PlatformStyle *_platformStyle, QWidget *par
 {
     ui->setupUi(this);
 
+    ui->scanQRButton->setIcon(platformStyle->SingleColorIcon(":/icons/warning"));
     ui->addressBookButton->setIcon(platformStyle->SingleColorIcon(":/icons/address-book"));
     ui->pasteButton->setIcon(platformStyle->SingleColorIcon(":/icons/editpaste"));
     ui->deleteButton->setIcon(platformStyle->SingleColorIcon(":/icons/remove"));
@@ -46,6 +51,15 @@ SendCoinsEntry::SendCoinsEntry(const PlatformStyle *_platformStyle, QWidget *par
 SendCoinsEntry::~SendCoinsEntry()
 {
     delete ui;
+}
+
+void SendCoinsEntry::on_scanQRButton_clicked()
+{
+	QRScanDialog dlg(this);
+	if(dlg.exec()){
+        ;
+	}
+
 }
 
 void SendCoinsEntry::on_pasteButton_clicked()
