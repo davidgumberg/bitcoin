@@ -36,6 +36,9 @@ void QRScanDialog::on_scanFileButton_clicked()
 		std::cout << "somebody nullt the whole darn guy \n";
 		return;
 	}
+
+	std::cout << fileName.toUtf8().data();
+	std::cout << "Da dog runt whilt" << std::endl;
 	QImage imageToDecode(fileName);
 	if(imageToDecode.isNull()){
 		std::cout << "Somebody nullt it: " << fileName.toStdString() << "now with data" << fileName.toStdString().data() << std::endl;
@@ -46,9 +49,16 @@ void QRScanDialog::on_scanFileButton_clicked()
 	decoder.setDecoder( QZXing::DecoderFormat_QR_CODE | QZXing::DecoderFormat_EAN_13 );
     decoder.setTryHarderBehaviour(QZXing::TryHarderBehaviour_ThoroughScanning | QZXing::TryHarderBehaviour_Rotate);
 
-	QString result = decoder.decodeImage(imageToDecode);
-		if(result
-	std::cout << "hello" << fileName.toStdString() << " " << result.toStdString().data() << "bubkis" << std::endl;
+	QString result = decoder.decodeImage(imageToDecode, 360, 360);
+	if(result.isNull()){
+		std::cout << "death" << std::endl;
+		return;
+	}
+	if(!result.isNull() && !result.isEmpty()){
+		std::cout << "hello" << fileName.toUtf8().data() << " " << result.toUtf8().data() << "bubkis" << std::endl;
+	}
+	else
+		std::cout << "Wharr happinet";
 }
 
 void QRScanDialog::on_scanCameraButton_clicked()
