@@ -51,6 +51,9 @@ qt_test_test_bitcoin_qt_LDADD = $(LIBBITCOINQT) $(LIBBITCOIN_NODE) $(LIBTEST_UTI
 if ENABLE_WALLET
 qt_test_test_bitcoin_qt_LDADD += $(LIBBITCOIN_UTIL) $(LIBBITCOIN_WALLET)
 endif
+if USE_MDBX
+qt_test_test_bitcoin_qt_LDADD += $(MDBX_LIBS)
+endif
 if ENABLE_ZMQ
 qt_test_test_bitcoin_qt_LDADD += $(LIBBITCOIN_ZMQ) $(ZMQ_LIBS)
 endif
