@@ -148,6 +148,12 @@ AC_ARG_WITH([bdb],
   [use_bdb=$withval],
   [use_bdb=auto])
 
+AC_ARG_WITH([libmdbx],
+  [AS_HELP_STRING([--without-libmdbx],
+  [disable mdbx ])],
+  [use_libmdbx=$withval],
+  [use_libmdbx=auto])
+
 AC_ARG_ENABLE([usdt],
   [AS_HELP_STRING([--enable-usdt],
   [enable tracepoints for Userspace, Statically Defined Tracing (default is yes if sys/sdt.h is found)])],
@@ -1205,6 +1211,16 @@ if test "$enable_wallet" != "no"; then
         fi
         enable_wallet=no
     fi
+fi
+
+dnl Check for libmdbx
+if test "use_libmdbx" != "no"; then
+  AC_CHECK_HEADERS([mdbx.h++], [], [have_libmdbx=no])
+
+  if test "$have_libmdbx" != "no"; then
+    AC_MSG_CHECKING([whether libmdbx can be linked to])
+    AC_CHECK_LIB([mdbx], [mdbx_env_create], [MDBX_LIBS="$MIDBX_LIBS -lmdbx"], [have_libmdbx=no], [$MDBX_LIBS])
+  fi
 fi
 
 if test "$use_usdt" != "no"; then
