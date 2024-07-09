@@ -14,6 +14,7 @@ qt_mingw32_packages=qt
 
 bdb_packages=bdb
 sqlite_packages=sqlite
+libmdbx_packages=libmdbx
 
 zmq_packages=zeromq
 
