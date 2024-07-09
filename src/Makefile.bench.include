@@ -84,6 +84,10 @@ bench_bench_bitcoin_LDADD = \
   $(MINIUPNPC_LIBS) \
   $(NATPMP_LIBS)
 
+if USE_MDBX
+bench_bench_bitcoin_LDADD += $(MDBX_LIBS)
+endif
+
 if ENABLE_ZMQ
 bench_bench_bitcoin_LDADD += $(LIBBITCOIN_ZMQ) $(ZMQ_LIBS)
 endif
