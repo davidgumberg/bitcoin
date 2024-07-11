@@ -266,25 +266,25 @@ def check_ELF_interpreter(binary) -> bool:
 
 def check_ELF_ABI(binary) -> bool:
     expected_abi = ELF_ABIS[binary.header.machine_type][binary.abstract.header.endianness]
-    note = binary.concrete.get(lief.ELF.NOTE_TYPES.ABI_TAG)
-    assert note.details.abi == lief.ELF.NOTE_ABIS.LINUX
-    return note.details.version == expected_abi
+    note = binary.concrete.get(lief.ELF.Note.TYPE.GNU_ABI_TAG)
+    assert note.abi == lief.ELF.NoteAbi.ABI.LINUX
+    return note.version == expected_abi
 
 CHECKS = {
-lief.EXE_FORMATS.ELF: [
+lief.Binary.FORMATS.ELF: [
     ('IMPORTED_SYMBOLS', check_imported_symbols),
     ('EXPORTED_SYMBOLS', check_exported_symbols),
     ('LIBRARY_DEPENDENCIES', check_ELF_libraries),
     ('INTERPRETER_NAME', check_ELF_interpreter),
     ('ABI', check_ELF_ABI),
 ],
-lief.EXE_FORMATS.MACHO: [
+lief.Binary.FORMATS.MACHO: [
     ('DYNAMIC_LIBRARIES', check_MACHO_libraries),
     ('MIN_OS', check_MACHO_min_os),
     ('SDK', check_MACHO_sdk),
     ('LLD', check_MACHO_lld),
 ],
-lief.EXE_FORMATS.PE: [
+lief.Binary.FORMATS.PE: [
     ('DYNAMIC_LIBRARIES', check_PE_libraries),
     ('SUBSYSTEM_VERSION', check_PE_subsystem_version),
 ]
@@ -296,7 +296,7 @@ if __name__ == '__main__':
         try:
             binary = lief.parse(filename)
             etype = binary.format
-            if etype == lief.EXE_FORMATS.UNKNOWN:
+            if etype == lief.Binary.FORMATS.UNKNOWN:
                 print(f'{filename}: unknown executable format')
                 retval = 1
                 continue

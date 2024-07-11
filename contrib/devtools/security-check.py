@@ -227,17 +227,17 @@ BASE_MACHO = [
 ]
 
 CHECKS = {
-    lief.EXE_FORMATS.ELF: {
+    lief.Binary.FORMATS.ELF: {
         lief.ARCHITECTURES.X86: BASE_ELF + [('CONTROL_FLOW', check_ELF_control_flow)],
         lief.ARCHITECTURES.ARM: BASE_ELF,
         lief.ARCHITECTURES.ARM64: BASE_ELF,
         lief.ARCHITECTURES.PPC: BASE_ELF,
         lief.ARCHITECTURES.RISCV: BASE_ELF,
     },
-    lief.EXE_FORMATS.PE: {
+    lief.Binary.FORMATS.PE: {
         lief.ARCHITECTURES.X86: BASE_PE,
     },
-    lief.EXE_FORMATS.MACHO: {
+    lief.Binary.FORMATS.MACHO: {
         lief.ARCHITECTURES.X86: BASE_MACHO + [('PIE', check_PIE),
                                               ('NX', check_NX),
                                               ('CONTROL_FLOW', check_MACHO_control_flow)],
@@ -254,7 +254,7 @@ if __name__ == '__main__':
             arch = binary.abstract.header.architecture
             binary.concrete
 
-            if etype == lief.EXE_FORMATS.UNKNOWN:
+            if etype == lief.Binary.FORMATS.UNKNOWN:
                 print(f'{filename}: unknown executable format')
                 retval = 1
                 continue
