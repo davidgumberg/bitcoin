@@ -20,6 +20,8 @@
 #include <string>
 #include <vector>
 
+#include <mdbx.h++>
+
 static const size_t DBWRAPPER_PREALLOC_KEY_SIZE = 64;
 static const size_t DBWRAPPER_PREALLOC_VALUE_SIZE = 1024;
 
@@ -205,9 +207,10 @@ private:
     //! whether or not the database resides in memory
     bool m_is_memory;
 
-    std::optional<std::string> ReadImpl(Span<const std::byte> key) const;
-    bool ExistsImpl(Span<const std::byte> key) const;
-    size_t EstimateSizeImpl(Span<const std::byte> key1, Span<const std::byte> key2) const;
+    // [ Good hints ]
+    virtual std::optional<std::string> ReadImpl(Span<const std::byte> key) const;
+    virtual bool ExistsImpl(Span<const std::byte> key) const;
+    virtual size_t EstimateSizeImpl(Span<const std::byte> key1, Span<const std::byte> key2) const;
     auto& DBContext() const LIFETIMEBOUND { return *Assert(m_db_context); }
 
 public:
@@ -292,6 +295,16 @@ public:
         ssKey2 << key_end;
         return EstimateSizeImpl(ssKey1, ssKey2);
     }
+};
+
+// reference: https://github.com/bitcoin/bitcoin/pull/19334/commits/d416ae560e46a4846a3fd5990b7d390d2ef30ec8
+
+class MDBXWrapper : public CDBWrapper
+{
+private:
+    std::optional<std::string> ReadImpl(Span<const std::byte> key) const override;
+    bool ExistsImpl(Span<const std::byte> key) const override;
+    size_t EstimateSizeImpl(Span<const std::byte> key1, Span<const std::byte> key2) const override;
 };
 
 #endif // BITCOIN_DBWRAPPER_H

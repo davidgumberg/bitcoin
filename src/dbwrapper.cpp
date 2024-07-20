@@ -32,6 +32,8 @@
 #include <optional>
 #include <utility>
 
+#include <mdbx.h++>
+
 static auto CharCast(const std::byte* data) { return reinterpret_cast<const char*>(data); }
 
 bool DestroyDB(const std::string& path_str)
@@ -347,6 +349,22 @@ std::optional<std::string> CDBWrapper::ReadImpl(Span<const std::byte> key) const
         HandleError(status);
     }
     return strValue;
+}
+
+// [TODO: Reimplement this for mdbx]
+std::optional<std::string> MDBXWrapper::ReadImpl(Span<const std::byte> key) const
+{
+    return std::nullopt;
+}
+
+bool MDBXWrapper::ExistsImpl(Span<const std::byte> key) const
+{
+    return false;
+}
+
+size_t MDBXWrapper::EstimateSizeImpl(Span<const std::byte> key1, Span<const std::byte> key2) const
+{
+    return 0;
 }
 
 bool CDBWrapper::ExistsImpl(Span<const std::byte> key) const
