@@ -305,6 +305,12 @@ private:
     std::optional<std::string> ReadImpl(Span<const std::byte> key) const override;
     bool ExistsImpl(Span<const std::byte> key) const override;
     size_t EstimateSizeImpl(Span<const std::byte> key1, Span<const std::byte> key2) const override;
+public:
+    MDBXWrapper(const DBParams& params);
+    ~MDBXWrapper();
+
+    MDBXWrapper(const MDBXWrapper&) = delete;
+    MDBXWrapper& operator=(const MDBXWrapper&) = delete;
 };
 
 #endif // BITCOIN_DBWRAPPER_H

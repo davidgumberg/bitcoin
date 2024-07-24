@@ -220,6 +220,21 @@ struct LevelDBContext {
     leveldb::DB* pdb;
 };
 
+struct MDBXContext {
+    //! LibMDBX managed env creation parameters.
+    mdbx::env_managed::create_parameters create_parameters;
+
+    //! LibMDBX env operation parameters.
+    mdbx::env::operate_parameters operate_parameters;
+
+    //! LibMDBX managed environment "destroys the represented underlying object
+    //! from [its] own class destructor, but disallows copying and assignment
+    //! for instances."
+    mdbx::env_managed penv;
+
+};
+
+
 CDBWrapper::CDBWrapper(const DBParams& params)
     : m_db_context{std::make_unique<LevelDBContext>()}, m_name{fs::PathToString(params.path.stem())}, m_path{params.path}, m_is_memory{params.memory_only}
 {
@@ -275,6 +290,63 @@ CDBWrapper::CDBWrapper(const DBParams& params)
 
     LogPrintf("Using obfuscation key for %s: %s\n", fs::PathToString(params.path), HexStr(obfuscate_key));
 }
+
+MDBXWrapper::MDBXWrapper(const DBParams& params)
+    : m_db_context{std::make_unique<MDBXContext>()}, m_name{fs::PathToString(params.path.stem())}, m_path{params.path}, m_is_memory{params.memory_only}
+{
+    DBContext().penv = nullptr;
+    DBContext().readoptions.verify_checksums = true;
+    DBContext().iteroptions.verify_checksums = true;
+    DBContext().iteroptions.fill_cache = false;
+    DBContext().syncoptions.sync = true;
+    DBContext().options = GetOptions(params.cache_bytes);
+    DBContext().options.create_if_missing = true;
+    if (params.memory_only) {
+        DBContext().penv = leveldb::NewMemEnv(leveldb::Env::Default());
+        DBContext().options.env = DBContext().penv;
+    } else {
+        if (params.wipe_data) {
+            LogPrintf("Wiping LevelDB in %s\n", fs::PathToString(params.path));
+            leveldb::Status result = leveldb::DestroyDB(fs::PathToString(params.path), DBContext().options);
+            HandleError(result);
+        }
+        TryCreateDirectories(params.path);
+        LogPrintf("Opening LevelDB in %s\n", fs::PathToString(params.path));
+    }
+    // PathToString() return value is safe to pass to leveldb open function,
+    // because on POSIX leveldb passes the byte string directly to ::open(), and
+    // on Windows it converts from UTF-8 to UTF-16 before calling ::CreateFileW
+    // (see env_posix.cc and env_windows.cc).
+    leveldb::Status status = leveldb::DB::Open(DBContext().options, fs::PathToString(params.path), &DBContext().pdb);
+    HandleError(status);
+    LogPrintf("Opened LevelDB successfully\n");
+
+    if (params.options.force_compact) {
+        LogPrintf("Starting database compaction of %s\n", fs::PathToString(params.path));
+        DBContext().pdb->CompactRange(nullptr, nullptr);
+        LogPrintf("Finished database compaction of %s\n", fs::PathToString(params.path));
+    }
+
+    // The base-case obfuscation key, which is a noop.
+    obfuscate_key = std::vector<unsigned char>(OBFUSCATE_KEY_NUM_BYTES, '\000');
+
+    bool key_exists = Read(OBFUSCATE_KEY_KEY, obfuscate_key);
+
+    if (!key_exists && params.obfuscate && IsEmpty()) {
+        // Initialize non-degenerate obfuscation if it won't upset
+        // existing, non-obfuscated data.
+        std::vector<unsigned char> new_key = CreateObfuscateKey();
+
+        // Write `new_key` so we don't obfuscate the key with itself
+        Write(OBFUSCATE_KEY_KEY, new_key);
+        obfuscate_key = new_key;
+
+        LogPrintf("Wrote new obfuscate key for %s: %s\n", fs::PathToString(params.path), HexStr(obfuscate_key));
+    }
+
+    LogPrintf("Using obfuscation key for %s: %s\n", fs::PathToString(params.path), HexStr(obfuscate_key));
+}
+
 
 CDBWrapper::~CDBWrapper()
 {
