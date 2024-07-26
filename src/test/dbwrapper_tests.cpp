@@ -37,7 +37,7 @@ BOOST_AUTO_TEST_CASE(dbwrapper)
         uint256 res;
 
         // Ensure that we're doing real obfuscation when obfuscate=true
-        BOOST_CHECK(obfuscate != is_null_key(dbwrapper_private::GetObfuscateKey(dbw)));
+        BOOST_CHECK(obfuscate != is_null_key(dbw.GetObfuscateKey()));
 
         BOOST_CHECK(dbw.Write(key, in));
         BOOST_CHECK(dbw.Read(key, res));
@@ -57,7 +57,7 @@ BOOST_AUTO_TEST_CASE(dbwrapper_basic_data)
         bool res_bool;
 
         // Ensure that we're doing real obfuscation when obfuscate=true
-        BOOST_CHECK(obfuscate != is_null_key(dbwrapper_private::GetObfuscateKey(dbw)));
+        BOOST_CHECK(obfuscate != is_null_key(dbw.GetObfuscateKey()));
 
         //Simulate block raw data - "b + block hash"
         std::string key_block = "b" + m_rng.rand256().ToString();
@@ -177,7 +177,7 @@ BOOST_AUTO_TEST_CASE(dbwrapper_iterator)
         uint256 in2 = m_rng.rand256();
         BOOST_CHECK(dbw.Write(key2, in2));
 
-        std::unique_ptr<CDBIterator> it(const_cast<CDBWrapper&>(dbw).NewIterator());
+        std::unique_ptr<CDBIteratorBase> it(dbw.NewIterator());
 
         // Be sure to seek past the obfuscation key (if it exists)
         it->Seek(key);
@@ -232,7 +232,7 @@ BOOST_AUTO_TEST_CASE(existing_data_no_obfuscate)
     BOOST_CHECK_EQUAL(res2.ToString(), in.ToString());
 
     BOOST_CHECK(!odbw.IsEmpty()); // There should be existing data
-    BOOST_CHECK(is_null_key(dbwrapper_private::GetObfuscateKey(odbw))); // The key should be an empty string
+    BOOST_CHECK(is_null_key(odbw.GetObfuscateKey())); // The key should be an empty string
 
     uint256 in2 = m_rng.rand256();
     uint256 res3;
@@ -269,7 +269,7 @@ BOOST_AUTO_TEST_CASE(existing_data_reindex)
     // Check that the key/val we wrote with unobfuscated wrapper doesn't exist
     uint256 res2;
     BOOST_CHECK(!odbw.Read(key, res2));
-    BOOST_CHECK(!is_null_key(dbwrapper_private::GetObfuscateKey(odbw)));
+    BOOST_CHECK(!is_null_key(odbw.GetObfuscateKey()));
 
     uint256 in2 = m_rng.rand256();
     uint256 res3;
@@ -291,7 +291,8 @@ BOOST_AUTO_TEST_CASE(iterator_ordering)
     }
 
     // Check that creating an iterator creates a snapshot
-    std::unique_ptr<CDBIterator> it(const_cast<CDBWrapper&>(dbw).NewIterator());
+    //
+    std::unique_ptr<CDBIteratorBase> it(dbw.NewIterator());
 
     for (unsigned int x=0x00; x<256; ++x) {
         uint8_t key = x;
@@ -362,7 +363,7 @@ BOOST_AUTO_TEST_CASE(iterator_string_ordering)
         }
     }
 
-    std::unique_ptr<CDBIterator> it(const_cast<CDBWrapper&>(dbw).NewIterator());
+    std::unique_ptr<CDBIteratorBase> it(dbw.NewIterator());
     for (const int seek_start : {0, 5}) {
         it->Seek(StringContentsSerializer{ToString(seek_start)});
         for (unsigned int x = seek_start; x < 10; ++x) {
