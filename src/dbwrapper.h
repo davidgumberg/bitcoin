@@ -54,39 +54,27 @@ public:
 
 class CDBWrapperBase;
 
-/** These should be considered an implementation detail of the specific database.
- */
-namespace dbwrapper_private {
-
-/** Work around circular dependency, as well as for testing in dbwrapper_tests.
- * Database obfuscation should be considered an implementation detail of the
- * specific database.
- */
-const std::vector<unsigned char>& GetObfuscateKey(const CDBWrapperBase &w);
-
-}; // namespace dbwrapper_private
-
 bool DestroyDB(const std::string& path_str);
 
 /** Batch of changes queued to be written to a CDBWrapper */
 class CDBBatchBase
 {
 protected:
-    const CDBWrapperBase &parent;
+    const CDBWrapperBase &m_parent;
 
     DataStream ssKey{};
     DataStream ssValue{};
 
     size_t size_estimate{0};
 
-    virtual void WriteImpl(Span<const std::byte> key, DataStream& ssValue) = 0;
+    virtual void WriteImpl(Span<const std::byte> key, DataStream& ssVal) = 0;
     virtual void EraseImpl(Span<const std::byte> key) = 0;
 
 public:
     /**
      * @param[in] _parent   CDBWrapper that this batch is to be submitted to
      */
-    explicit CDBBatchBase(const CDBWrapperBase& _parent) : parent{_parent} {}
+    explicit CDBBatchBase(const CDBWrapperBase& _parent) : m_parent{_parent} {}
     virtual ~CDBBatchBase() = default;
     virtual void Clear() = 0;
 
@@ -119,7 +107,6 @@ class CDBWrapper;
 /** Batch of changes queued to be written to a CDBWrapper */
 class CDBBatch : public CDBBatchBase
 {
-    // TODO: What's the story here?
     friend class CDBWrapperBase;
     friend class CDBWrapper;
 
@@ -127,7 +114,7 @@ private:
     struct WriteBatchImpl;
     const std::unique_ptr<WriteBatchImpl> m_impl_batch;
 
-    void WriteImpl(Span<const std::byte> key, DataStream& ssValue) override;
+    void WriteImpl(Span<const std::byte> key, DataStream& ssVal) override;
     void EraseImpl(Span<const std::byte> key) override;
 
 public:
@@ -170,16 +157,7 @@ public:
         return true;
     }
 
-    template<typename V> bool GetValue(V& value) {
-        try {
-            DataStream ssValue{GetValueImpl()};
-            ssValue.Xor(dbwrapper_private::GetObfuscateKey(parent));
-            ssValue >> value;
-        } catch (const std::exception&) {
-            return false;
-        }
-        return true;
-    }
+    template<typename V> bool GetValue(V& value);
 
     virtual bool Valid() const = 0;
     virtual void SeekToFirst() = 0;
@@ -213,15 +191,12 @@ public:
 
 class CDBWrapperBase
 {
-    friend const std::vector<unsigned char>& dbwrapper_private::GetObfuscateKey(const CDBWrapperBase &w);
-
 protected:
     CDBWrapperBase(const DBParams& params)
         : m_name(fs::PathToString(params.path.stem())),
           m_path(params.path),
           m_is_memory(params.memory_only)
     {
-        obfuscate_key = CreateObfuscateKey();
     }
 
     //! the name of this database
@@ -237,6 +212,8 @@ protected:
     static const unsigned int OBFUSCATE_KEY_NUM_BYTES;
 
     std::vector<unsigned char> CreateObfuscateKey() const;
+
+    bool WriteObfuscateKeyIfNotExists();
 
     //! path to filesystem storage
     const fs::path m_path;
@@ -255,6 +232,8 @@ public:
     CDBWrapperBase& operator=(const CDBWrapperBase&) = delete;
 
     virtual ~CDBWrapperBase() = default;
+
+    const std::vector<unsigned char>& GetObfuscateKey() const;
 
     template <typename K, typename V>
     bool Read(const K& key, V& value) const
@@ -309,12 +288,12 @@ public:
         return WriteBatch(*batch, fSync);
     }
 
-    virtual bool WriteBatch(CDBBatchBase& batch, bool fSync) = 0;
+    virtual bool WriteBatch(CDBBatchBase& batch, bool fSync = false) = 0;
 
     // Get an estimate of LevelDB memory usage (in bytes).
     virtual size_t DynamicMemoryUsage() const = 0;
 
-    virtual CDBIterator* NewIterator() = 0;
+    virtual CDBIteratorBase* NewIterator() = 0;
 
     /**
      * Return true if the database managed by this class contains no entries.
@@ -360,8 +339,110 @@ public:
     bool WriteBatch(CDBBatchBase& batch, bool fSync = false) override;
     size_t DynamicMemoryUsage() const override;
 
-    CDBIterator* NewIterator() override;
+    CDBIteratorBase* NewIterator() override;
     bool IsEmpty() override;
-    };
+
+    static bool DestroyDB(const std::string& path_str);
+};
+
+struct MDBXContext;
+
+// MDBXContext is defined in mdbx.cpp to avoid dependency on libmdbx here
+struct MDBXContext;
+
+/** Batch of changes queued to be written to an MDBXWrapper */
+class MDBXBatch : public CDBBatchBase
+{
+    // We want MDBXBatch to be able to access DBContext()
+    friend class MDBXWrapper;
+
+private:
+    struct MDBXWriteBatchImpl;
+    std::unique_ptr<MDBXWriteBatchImpl> m_impl_batch;
+
+    void WriteImpl(Span<const std::byte> key, DataStream& value) override;
+    void EraseImpl(Span<const std::byte> key) override;
+
+public:
+    /**
+     * @param[in] _parent   CDBWrapper that this batch is to be submitted to
+     */
+    explicit MDBXBatch(const CDBWrapperBase& _parent);
+    ~MDBXBatch();
+    void Clear() override;
+};
+
+/** An iterator that maps to MDBX's cursor */
+class MDBXIterator : public CDBIteratorBase
+{
+public:
+    struct IteratorImpl;
+private:
+    const std::unique_ptr<IteratorImpl> m_impl_iter;
+    bool valid;
+
+    void SeekImpl(Span<const std::byte> key) override;
+    Span<const std::byte> GetKeyImpl() const override;
+    Span<const std::byte> GetValueImpl() const override;
+
+public:
+    /**
+     * @param[in] _parent          Parent CDBWrapper instance.
+     * @param[in] _piter           MDBX iterator.
+     */
+    MDBXIterator(const CDBWrapperBase& _parent, std::unique_ptr<IteratorImpl> _piter);
+    ~MDBXIterator() override;
+
+    bool Valid() const override;
+    void SeekToFirst() override;
+    void Next() override;
+};
+
+class MDBXWrapper : public CDBWrapperBase
+{
+    friend class MDBXBatch; // We want MDBXBatch to be able to access the env and sync
+                            // Is there a better mechanism than friend class?
+private:
+    //! holds all mdbx-specific fields of this class
+    std::unique_ptr<MDBXContext> m_db_context;
+    auto& DBContext() const LIFETIMEBOUND { return *Assert(m_db_context); }
+
+    std::optional<std::string> ReadImpl(Span<const std::byte> key) const override;
+    bool ExistsImpl(Span<const std::byte> key) const override;
+    size_t EstimateSizeImpl(Span<const std::byte> key1, Span<const std::byte> key2) const override;
+
+    inline std::unique_ptr<CDBBatchBase> CreateBatch() const override {
+        return std::make_unique<MDBXBatch>(*this);
+    }
+
+    void Sync();
+
+public:
+    MDBXWrapper(const DBParams& params);
+    ~MDBXWrapper() override;
+
+    bool WriteBatch(CDBBatchBase& _batch, bool fSync = false) override;
+    size_t DynamicMemoryUsage() const override;
+
+    CDBIteratorBase* NewIterator() override;
+
+    /**
+     * Return true if the database managed by this class contains no entries.
+     */
+    bool IsEmpty() override;
+
+    static bool DestroyDB(const std::string& path_str);
+};
+
+template<typename V> bool CDBIteratorBase::GetValue(V& value) {
+    try {
+        DataStream ssValue{GetValueImpl()};
+        ssValue.Xor(parent.GetObfuscateKey());
+        ssValue >> value;
+    } catch (const std::exception&) {
+        return false;
+    }
+    return true;
+}
 
 #endif // BITCOIN_DBWRAPPER_H
