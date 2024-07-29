@@ -28,6 +28,7 @@
 #include <leveldb/slice.h>
 #include <leveldb/status.h>
 #include <leveldb/write_batch.h>
+#include <mdbx.h++>
 #include <memory>
 #include <optional>
 #include <utility>
@@ -37,6 +38,11 @@ static auto CharCast(const std::byte* data) { return reinterpret_cast<const char
 bool CDBWrapper::DestroyDB(const std::string& path_str)
 {
     return leveldb::DestroyDB(path_str, {}).ok();
+}
+
+bool MDBXWrapper::DestroyDB(const std::string& path_str)
+{
+    return mdbx::env::remove(path_str);
 }
 
 struct CDBWrapper::StatusImpl
@@ -398,6 +404,22 @@ bool CDBWrapper::IsEmpty()
     return !(it->Valid());
 }
 
+struct MDBXContext {
+    mdbx::env::operate_parameters operate_params;
+    mdbx::env_managed::create_parameters create_params;
+
+    // MDBX environment handle
+    mdbx::env_managed env;
+    // MDBX txn and map
+    mdbx::txn_managed read_txn;
+    mdbx::map_handle map;
+
+    ~MDBXContext() {
+        read_txn.abort();
+        env.close();
+    }
+};
+
 struct CDBIterator::IteratorImpl {
     const std::unique_ptr<leveldb::Iterator> iter;
 
@@ -434,7 +456,245 @@ void CDBIterator::SeekToFirst() { m_impl_iter->iter->SeekToFirst(); }
 void CDBIterator::Next() { m_impl_iter->iter->Next(); }
 
 
+
+MDBXWrapper::MDBXWrapper(const DBParams& params)
+    : CDBWrapperBase(params),
+    m_db_context{std::make_unique<MDBXContext>()}
 {
+    if (params.wipe_data) {
+        LogInfo("Wiping MDBX in %s\n", fs::PathToString(params.path));
+        DestroyDB(fs::PathToString(params.path));
+    }
+
+    TryCreateDirectories(params.path);
+
+    LogPrintf("Opening MDBX in %s\n", fs::PathToString(params.path));
+
+    // We need this because of some unpleasant (for us) passing around of the
+    // Chainstate between threads during initialization.
+    DBContext().operate_params.options.no_sticky_threads = true;
+    // initialize the mdbx environment.
+    DBContext().env = mdbx::env_managed(params.path, DBContext().create_params, DBContext().operate_params);
+
+    DBContext().read_txn = DBContext().env.start_read();
+    DBContext().map = DBContext().read_txn.open_map(nullptr, mdbx::key_mode::usual, mdbx::value_mode::single);
+
+    // Open readers induce really ugly append-only LMDB behavior
+    DBContext().read_txn.park_reading(true);
+
+    if (params.obfuscate && WriteObfuscateKeyIfNotExists()){
+        LogInfo("Wrote new obfuscate key for %s: %s\n", fs::PathToString(params.path), HexStr(obfuscate_key));
+    }
+    LogInfo("Using obfuscation key for %s: %s\n", fs::PathToString(params.path), HexStr(GetObfuscateKey()));
+}
+
+MDBXWrapper::~MDBXWrapper() = default;
+
+void MDBXWrapper::Sync()
+{
+    DBContext().env.sync_to_disk();
+}
+
+std::optional<std::string> MDBXWrapper::ReadImpl(Span<const std::byte> key) const
+{
+    mdbx::slice slKey(CharCast(key.data()), key.size()), slValue;
+
+    DBContext().read_txn.unpark_reading();
+    slValue = DBContext().read_txn.get(DBContext().map, slKey, mdbx::slice::invalid());
+
+    std::optional<std::string> ret;
+
+    if(slValue == mdbx::slice::invalid()) {
+        ret = std::nullopt;
+    }
+    else {
+        ret = std::string(slValue.as_string());
+    }
+    DBContext().read_txn.park_reading(true);
+    return ret;
+}
+
+bool MDBXWrapper::ExistsImpl(Span<const std::byte> key) const {
+    mdbx::slice slKey(CharCast(key.data()), key.size()), slValue;
+
+    DBContext().read_txn.unpark_reading();
+    slValue = DBContext().read_txn.get(DBContext().map, slKey, mdbx::slice::invalid());
+
+    if(slValue == mdbx::slice::invalid()) {
+        DBContext().read_txn.park_reading(true);
+        return false;
+    }
+
+    DBContext().read_txn.park_reading(true);
+    return true;
+}
+
+size_t MDBXWrapper::EstimateSizeImpl(Span<const std::byte> key1, Span<const std::byte> key2) const
+{
+    // Only relevant for `gettxoutsetinfo` rpc.
+    // Hint: (leaves + inner pages + overflow pages) * page size.
+    return size_t{0};
+}
+
+bool MDBXWrapper::WriteBatch(CDBBatchBase& _batch, bool fSync)
+{
+    // DBContext().txn.reset_reading();
+    auto& batch = static_cast<MDBXBatch&>(_batch);
+
+    LogDebug(BCLog::COINDB, "There are %d many readers before this batchwrite.\n", DBContext().env.get_info().mi_numreaders);
+
+    batch.CommitAndReset();
+
+    if(fSync) {
+        Sync();
+    }
+
+    return true;
+}
+
+size_t MDBXWrapper::DynamicMemoryUsage() const
+{
+    // Only relevant for some logging that happens in WriteBatch
+    // TODO: how can I estimate this? I believe mmap makes this a challenge
+    return size_t{0};
+}
+
+struct MDBXBatch::MDBXWriteBatchImpl {
+    mdbx::txn_managed txn;
+    mdbx::map_handle map;
+};
+
+MDBXBatch::MDBXBatch (const CDBWrapperBase& _parent) : CDBBatchBase(_parent)
+{
+    const MDBXWrapper& parent = static_cast<const MDBXWrapper&>(m_parent);
+    m_impl_batch = std::make_unique<MDBXWriteBatchImpl>();
+
+    m_impl_batch->txn = parent.DBContext().env.start_write();
+    m_impl_batch->map = parent.DBContext().map;
+};
+
+MDBXBatch::~MDBXBatch()
+{
+    if(m_impl_batch->txn){
+        m_impl_batch->txn.abort();
+    }
+}
+
+void MDBXBatch::CommitAndReset()
+{
+    m_impl_batch->txn.commit();
+
+    auto &parent = static_cast<const MDBXWrapper&>(m_parent);
+    m_impl_batch->txn = parent.DBContext().env.start_write();
+}
+
+void MDBXBatch::Clear()
+{
+    m_impl_batch->txn.abort();
+}
+
+void MDBXBatch::WriteImpl(Span<const std::byte> key, DataStream& value)
+{
+    auto &parent = static_cast<const MDBXWrapper&>(m_parent);
+
+    mdbx::slice slKey(CharCast(key.data()), key.size());
+    value.Xor(m_parent.GetObfuscateKey());
+    mdbx::slice slValue(CharCast(value.data()), value.size());
+
+    try {
+        m_impl_batch->txn.put(parent.DBContext().map, slKey, slValue, mdbx::put_mode::upsert);
+    }
+    catch (mdbx::error err) {
+        const std::string errmsg = "Fatal MDBX error: " + err.message();
+        std::cout << errmsg << std::endl;
+        throw dbwrapper_error(errmsg);
+    }
+}
+
+void MDBXBatch::EraseImpl(Span<const std::byte> key)
+{
+    auto &parent = static_cast<const MDBXWrapper&>(m_parent);
+
+    mdbx::slice slKey(CharCast(key.data()), key.size());
+    m_impl_batch->txn.erase(parent.DBContext().map, slKey);
+}
+
+size_t MDBXBatch::SizeEstimate() const
+{
+    return m_impl_batch->txn.size_current();
+}
+
+struct MDBXIterator::IteratorImpl {
+    const std::unique_ptr<mdbx::txn_managed> read_txn;
+    const std::unique_ptr<mdbx::cursor_managed> cursor;
+
+    IteratorImpl(mdbx::txn_managed&& txn, mdbx::cursor_managed&& cur)
+        : read_txn(std::make_unique<mdbx::txn_managed>(std::move(txn)))
+        , cursor(std::make_unique<mdbx::cursor_managed>(std::move(cur)))
+    {}
+};
+
+MDBXIterator::MDBXIterator(const CDBWrapperBase& _parent, const MDBXContext &db_context) : CDBIteratorBase(_parent)
+{
+    auto read_txn = db_context.env.start_read();
+    auto cursor = read_txn.open_cursor(db_context.map);
+
+    m_impl_iter = std::unique_ptr<IteratorImpl>(new IteratorImpl(std::move(read_txn), std::move(cursor)));
+}
+
+MDBXIterator::~MDBXIterator()
+{
+    m_impl_iter->read_txn->abort();
+}
+
+void MDBXIterator::SeekImpl(Span<const std::byte> key)
+{
+    mdbx::slice slKey(CharCast(key.data()), key.size());
+    valid = m_impl_iter->cursor->seek(slKey);
+}
+
+CDBIteratorBase* MDBXWrapper::NewIterator()
+{
+    return new MDBXIterator{*this, DBContext()};
+}
+
+bool MDBXWrapper::IsEmpty()
+{
+    DBContext().read_txn.unpark_reading();
+    auto cursor{DBContext().read_txn.open_cursor(DBContext().map)};
+
+    // the done parameter indicates whether or not the cursor move succeeded.
+    auto ret = !cursor.to_first(/*throw_notfound=*/false).done;
+    DBContext().read_txn.park_reading(true);
+    return ret;
+}
+
+Span<const std::byte> MDBXIterator::GetKeyImpl() const
+{
+    // 'AsBytes(Span(...' is necessary since mdbx::slice::bytes() returns std::span<char8_t>
+    // Rather than Span<std::byte>
+    return AsBytes(Span(m_impl_iter->cursor->current().key.bytes()));
+}
+
+Span<const std::byte> MDBXIterator::GetValueImpl() const
+{
+    // 'AsBytes(Span(...' is necessary since mdbx::slice::bytes() returns std::span<char8_t>
+    // Rather than Span<std::byte>
+    return AsBytes(Span(m_impl_iter->cursor->current().value.bytes()));
+}
+
+bool MDBXIterator::Valid() const {
+    return valid;
+}
+
+void MDBXIterator::SeekToFirst()
+{
+    valid = m_impl_iter->cursor->to_first(/*throw_notfound=*/false).done;
+}
+
+void MDBXIterator::Next()
+{
+    valid = m_impl_iter->cursor->to_next(/*throw_notfound=*/false).done;
 }
 
 const std::vector<unsigned char>& CDBWrapperBase::GetObfuscateKey() const
