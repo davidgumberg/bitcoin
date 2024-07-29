@@ -288,7 +288,7 @@ public:
         return WriteBatch(*batch, fSync);
     }
 
-    virtual bool WriteBatch(CDBBatchBase& batch, bool fSync) = 0;
+    virtual bool WriteBatch(CDBBatchBase& batch, bool fSync = false) = 0;
 
     // Get an estimate of LevelDB memory usage (in bytes).
     virtual size_t DynamicMemoryUsage() const = 0;
@@ -351,6 +351,98 @@ public:
     size_t DynamicMemoryUsage() const override;
 
     CDBIteratorBase* NewIterator() override;
+    bool IsEmpty() override;
+
+    static bool DestroyDB(const std::string& path_str);
+};
+
+// MDBXContext is defined in mdbx.cpp to avoid dependency on libmdbx here
+struct MDBXContext;
+
+/** Batch of changes queued to be written to an MDBXWrapper */
+class MDBXBatch : public CDBBatchBase
+{
+    // We want MDBXBatch to be able to access DBContext()
+    friend class MDBXWrapper;
+
+private:
+    struct MDBXWriteBatchImpl;
+    std::unique_ptr<MDBXWriteBatchImpl> m_impl_batch;
+
+    void WriteImpl(Span<const std::byte> key, DataStream& value) override;
+    void EraseImpl(Span<const std::byte> key) override;
+
+public:
+    /**
+     * @param[in] _parent   CDBWrapper that this batch is to be submitted to
+     */
+    explicit MDBXBatch(const CDBWrapperBase& _parent);
+    ~MDBXBatch();
+    void Clear() override;
+    void CommitAndReset();
+
+    size_t SizeEstimate() const override;
+};
+
+/** An iterator that maps to MDBX's cursor */
+class MDBXIterator : public CDBIteratorBase
+{
+public:
+    struct IteratorImpl;
+private:
+    std::unique_ptr<IteratorImpl> m_impl_iter;
+    bool valid;
+
+    void SeekImpl(Span<const std::byte> key) override;
+    Span<const std::byte> GetKeyImpl() const override;
+    Span<const std::byte> GetValueImpl() const override;
+
+public:
+    /**
+     * @param[in] _parent          Parent CDBWrapper instance.
+     * @param[in] db_context       MDBXWrapper DBContext.
+     */
+    MDBXIterator(const CDBWrapperBase& _parent, const MDBXContext &db_context);
+
+    ~MDBXIterator() override;
+
+    bool Valid() const override;
+    void SeekToFirst() override;
+    void Next() override;
+};
+
+class MDBXWrapper : public CDBWrapperBase
+{
+    friend class MDBXIterator;
+    friend class MDBXBatch; // We want MDBXBatch to be able to access the env and sync
+                            // Is there a better mechanism than friend class?
+private:
+    //! holds all mdbx-specific fields of this class
+    std::unique_ptr<MDBXContext> m_db_context;
+    auto& DBContext() const LIFETIMEBOUND { return *Assert(m_db_context); }
+
+    std::optional<std::string> ReadImpl(Span<const std::byte> key) const override;
+    bool ExistsImpl(Span<const std::byte> key) const override;
+    size_t EstimateSizeImpl(Span<const std::byte> key1, Span<const std::byte> key2) const override;
+
+    inline std::unique_ptr<CDBBatchBase> CreateBatch() const override {
+        return std::make_unique<MDBXBatch>(*this);
+    }
+
+    void Sync();
+
+public:
+    MDBXWrapper(const DBParams& params);
+    ~MDBXWrapper() override;
+
+    bool WriteBatch(CDBBatchBase& _batch, bool fSync = false) override;
+    size_t DynamicMemoryUsage() const override;
+
+    CDBIteratorBase* NewIterator() override;
+
+    /**
+     * Return true if the database managed by this class contains no entries.
+     */
     bool IsEmpty() override;
 
     static bool DestroyDB(const std::string& path_str);
