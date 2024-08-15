@@ -281,7 +281,6 @@ BITCOIN_CORE_H = \
   streams.h \
   support/allocators/pool.h \
   support/allocators/secure.h \
-  support/allocators/zeroafterfree.h \
   support/cleanse.h \
   support/events.h \
   support/lockedpool.h \
