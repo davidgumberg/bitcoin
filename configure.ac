@@ -148,6 +148,12 @@ AC_ARG_WITH([bdb],
   [use_bdb=$withval],
   [use_bdb=auto])
 
+AC_ARG_WITH([mdbx],
+  [AS_HELP_STRING([--without-mdbx],
+  [disable mdbx ])],
+  [use_mdbx=$withval],
+  [use_mdbx=yes])
+
 AC_ARG_ENABLE([usdt],
   [AS_HELP_STRING([--enable-usdt],
   [enable tracepoints for Userspace, Statically Defined Tracing (default is yes if sys/sdt.h is found)])],
@@ -1179,6 +1185,16 @@ if test "$enable_wallet" != "no"; then
     fi
 fi
 
+dnl Check for libmdbx
+if test "use_mdbx" != "no"; then
+  AC_CHECK_HEADERS([mdbx.h++], [], [have_mdbx=no])
+
+  if test "$have_mdbx" != "no"; then
+    AC_MSG_CHECKING([whether mdbx can be linked to])
+    AC_CHECK_LIB([mdbx], [mdbx_env_create], [MDBX_LIBS="$MIDBX_LIBS -lmdbx"], [have_mdbx=no], [$MDBX_LIBS])
+  fi
+fi
+
 if test "$use_usdt" != "no"; then
   AC_MSG_CHECKING([whether Userspace, Statically Defined Tracing tracepoints are supported])
   AC_COMPILE_IFELSE([
@@ -1577,6 +1593,7 @@ AM_CONDITIONAL([TARGET_WINDOWS], [test "$TARGET_OS" = "windows"])
 AM_CONDITIONAL([ENABLE_WALLET], [test "$enable_wallet" = "yes"])
 AM_CONDITIONAL([USE_SQLITE], [test "$use_sqlite" = "yes"])
 AM_CONDITIONAL([USE_BDB], [test "$use_bdb" = "yes"])
+AM_CONDITIONAL([USE_MDBX], [test "$use_mdbx" = "yes"])
 AM_CONDITIONAL([ENABLE_TESTS], [test "$BUILD_TEST" = "yes"])
 AM_CONDITIONAL([ENABLE_FUZZ], [test "$enable_fuzz" = "yes"])
 AM_CONDITIONAL([ENABLE_FUZZ_BINARY], [test "$enable_fuzz_binary" = "yes"])
@@ -1653,12 +1670,14 @@ AC_SUBST(ARM_SHANI_CXXFLAGS)
 AC_SUBST(LIBTOOL_APP_LDFLAGS)
 AC_SUBST(USE_SQLITE)
 AC_SUBST(USE_BDB)
+AC_SUBST(USE_MDBX)
 AC_SUBST(ENABLE_EXTERNAL_SIGNER)
 AC_SUBST(USE_UPNP)
 AC_SUBST(USE_QRCODE)
 AC_SUBST(TESTDEFS)
 AC_SUBST(MINIUPNPC_CPPFLAGS)
 AC_SUBST(MINIUPNPC_LIBS)
+AC_SUBST(MDBX_LIBS)
 AC_SUBST(NATPMP_CPPFLAGS)
 AC_SUBST(NATPMP_LIBS)
 AC_SUBST(HAVE_FDATASYNC)
@@ -1721,6 +1740,7 @@ echo
 echo "Options used to compile and link:"
 echo "  external signer = $use_external_signer"
 echo "  multiprocess    = $build_multiprocess"
+echo "  with mdbx    = $use_mdbx"
 echo "  with wallet     = $enable_wallet"
 if test "$enable_wallet" != "no"; then
     echo "    with sqlite   = $use_sqlite"
