@@ -1151,13 +1151,27 @@ static auto InitBlocksdirXorKey(const BlockManager::Options& opts)
     // size of the XOR-key file.
     std::array<std::byte, 8> xor_key{};
 
+    const fs::path xor_key_path{opts.blocks_dir / "xor.dat"};
+
+    if (!opts.use_xor) {
+        // If the user disabled the key, there should be no xor file
+        if (fs::exists(xor_key_path)) {
+            throw std::runtime_error{
+                strprintf("The blocksdir XOR-key can not be disabled when an XOR key was already stored! "
+                          "Stored key: '%s', stored path: '%s'.",
+                          HexStr(xor_key), fs::PathToString(xor_key_path)),
+            };
+        }
+
+        return std::vector<std::byte>{};
+    }
+
     if (opts.use_xor && fs::is_empty(opts.blocks_dir)) {
         // Only use random fresh key when the boolean option is set and on the
         // very first start of the program.
         FastRandomContext{}.fillrand(xor_key);
     }
 
-    const fs::path xor_key_path{opts.blocks_dir / "xor.dat"};
     if (fs::exists(xor_key_path)) {
         // A pre-existing xor key file has priority.
         AutoFile xor_key_file{fsbridge::fopen(xor_key_path, "rb")};
@@ -1173,14 +1187,7 @@ static auto InitBlocksdirXorKey(const BlockManager::Options& opts)
         )};
         xor_key_file << xor_key;
     }
-    // If the user disabled the key, it must be zero.
-    if (!opts.use_xor && xor_key != decltype(xor_key){}) {
-        throw std::runtime_error{
-            strprintf("The blocksdir XOR-key can not be disabled when a random key was already stored! "
-                      "Stored key: '%s', stored path: '%s'.",
-                      HexStr(xor_key), fs::PathToString(xor_key_path)),
-        };
-    }
+
     LogInfo("Using obfuscation key for blocksdir *.dat files (%s): '%s'\n", fs::PathToString(opts.blocks_dir), HexStr(xor_key));
     return std::vector<std::byte>{xor_key.begin(), xor_key.end()};
 }
