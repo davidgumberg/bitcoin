@@ -53,5 +53,27 @@ static void AutoFileXor(benchmark::Bench& bench)
     std::filesystem::remove(path);
 }
 
+static void AutoFileNoXor(benchmark::Bench& bench)
+{
+    FastRandomContext frc{/*fDeterministic=*/true};
+
+    auto tmp_dir = std::filesystem::temp_directory_path();
+    std::string unique_filename = "xortest_" + std::to_string(frc.rand32());
+    auto path = tmp_dir / unique_filename;
+
+    auto data{frc.randbytes<std::byte>(4'096)};
+    Span<const std::byte> src{data};
+
+    FILE *m_file = fsbridge::fopen(path, "wb+");
+
+    bench.batch(src.size()).unit("byte").run([&] {
+        std::fwrite(src.data(), 1, src.size(), m_file);
+    });
+
+    std::fclose(m_file);
+    std::filesystem::remove(path);
+}
+
 BENCHMARK(Xor, benchmark::PriorityLevel::HIGH);
 BENCHMARK(AutoFileXor, benchmark::PriorityLevel::HIGH);
+BENCHMARK(AutoFileNoXor, benchmark::PriorityLevel::HIGH);
