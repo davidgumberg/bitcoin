@@ -65,6 +65,16 @@ void CCoinsViewDB::ResizeCache(size_t new_cache_size)
     }
 }
 
+void CCoinsViewDB::Stop()
+{
+    m_db->Stop();
+}
+
+void CCoinsViewDB::Start()
+{
+    m_db->Start();
+}
+
 bool CCoinsViewDB::GetCoin(const COutPoint &outpoint, Coin &coin) const {
     return m_db->Read(CoinEntry(&outpoint), coin);
 }

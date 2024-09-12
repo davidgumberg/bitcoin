@@ -327,12 +327,14 @@ void Shutdown(NodeContext& node)
 
     // FlushStateToDisk generates a ChainStateFlushed callback, which we should avoid missing
     if (node.chainman) {
+        node.chainman->MakeMDBXHappy();
         LOCK(cs_main);
         for (Chainstate* chainstate : node.chainman->GetAll()) {
             if (chainstate->CanFlushToDisk()) {
                 chainstate->ForceFlushStateToDisk();
             }
         }
+        node.chainman->MakeMDBXSad();
     }
 
     // After there are no more peers/RPC left to give us new data which may generate
@@ -1779,7 +1781,10 @@ bool AppInitMain(NodeContext& node, interfaces::BlockAndHeaderTipInfo* tip_info)
         vImportFiles.push_back(fs::PathFromString(strFile));
     }
 
+    chainman.MakeMDBXSad();
     chainman.m_thread_load = std::thread(&util::TraceThread, "initload", [=, &chainman, &args, &node] {
+        chainman.MakeMDBXHappy();
+
         ScheduleBatchPriority();
         // Import blocks
         ImportBlocks(chainman, vImportFiles);
@@ -1802,6 +1807,7 @@ bool AppInitMain(NodeContext& node, interfaces::BlockAndHeaderTipInfo* tip_info)
             LoadMempool(*pool, ShouldPersistMempool(args) ? MempoolPath(args) : fs::path{}, chainman.ActiveChainstate(), {});
             pool->SetLoadTried(!chainman.m_interrupt);
         }
+        chainman.MakeMDBXSad();
     });
 
     // Wait for genesis block to be processed

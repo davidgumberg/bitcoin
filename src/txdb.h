@@ -66,6 +66,9 @@ public:
     bool BatchWrite(CoinsViewCacheCursor& cursor, const uint256 &hashBlock) override;
     std::unique_ptr<CCoinsViewCursor> Cursor() const override;
 
+    void Stop();
+    void Start();
+
     //! Whether an unsupported database format is used.
     bool NeedsUpgrade();
     size_t EstimateSize() const override;
