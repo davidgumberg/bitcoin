@@ -50,6 +50,32 @@ void AutoFile::seek(int64_t offset, int origin)
     }
 }
 
+void AutoFile::rewind()
+{
+    if (IsNull()) {
+        throw std::ios_base::failure("AutoFile::rewind: file handle is nullptr");
+    }
+    std::rewind(m_file);
+    m_position = 0;
+}
+
+int AutoFile::fgetc()
+{
+    if (IsNull()) {
+        throw std::ios_base::failure("AutoFile::rewind: file handle is nullptr");
+    }
+
+    int c{std::fgetc(m_file)};
+
+    // ferror is set when `fgetc` fails for a reason other than EOF reached.
+    if (c < 0 && std::ferror(m_file)) {
+        throw std::ios_base::failure("AutoFile::fgetc: fgetc failed");
+    }
+
+    m_position++;
+    return c;
+}
+
 void AutoFile::read(Span<std::byte> dst)
 {
     if (detail_fread(dst) != dst.size()) {

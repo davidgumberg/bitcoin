@@ -9,6 +9,7 @@
 #include <serialize.h>
 #include <span.h>
 #include <support/allocators/zeroafterfree.h>
+#include <util/fs_helpers.h>
 #include <util/overflow.h>
 
 #include <algorithm>
@@ -402,6 +403,7 @@ public:
     AutoFile& operator=(const AutoFile&) = delete;
 
     bool feof() const { return std::feof(m_file); }
+    int fgetc();
 
     int fclose()
     {
@@ -420,11 +422,10 @@ public:
         return ret;
     }
 
-    /** Get wrapped FILE* without transfer of ownership.
-     * @note Ownership of the FILE* will remain with this class. Use this only if the scope of the
-     * AutoFile outlives use of the passed pointer.
-     */
-    std::FILE* Get() const { return m_file; }
+    // Neither fflush nor ftruncate modify the file offset.
+
+    bool Commit() { return FileCommit(m_file); }
+    bool Truncate(unsigned int length) { return TruncateFile(m_file, length); }
 
     /** Return true if the wrapped FILE* is nullptr, false otherwise.
      */
@@ -438,6 +439,8 @@ public:
 
     void seek(int64_t offset, int origin);
     int64_t tell() noexcept { return m_position; }
+
+    void rewind();
 
     //
     // Stream subset
