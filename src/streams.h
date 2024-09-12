@@ -390,9 +390,10 @@ class AutoFile
 protected:
     std::FILE* m_file;
     std::vector<std::byte> m_xor;
+    int64_t m_position;
 
 public:
-    explicit AutoFile(std::FILE* file, std::vector<std::byte> data_xor={}) : m_file{file}, m_xor{std::move(data_xor)} {}
+    explicit AutoFile(std::FILE* file, std::vector<std::byte> data_xor={});
 
     ~AutoFile() { fclose(); }
 
@@ -436,7 +437,7 @@ public:
     std::size_t detail_fread(Span<std::byte> dst);
 
     void seek(int64_t offset, int origin);
-    int64_t tell();
+    int64_t tell() noexcept { return m_position; }
 
     //
     // Stream subset
