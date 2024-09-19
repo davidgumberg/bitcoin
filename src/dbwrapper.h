@@ -310,6 +310,9 @@ public:
         ssKey2 << key_end;
         return EstimateSizeImpl(ssKey1, ssKey2);
     }
+
+    virtual void Start() {}
+    virtual void Stop() {}
 };
 
 template<typename V> bool CDBIteratorBase::GetValue(V& value) {
@@ -443,6 +446,8 @@ public:
     bool IsEmpty() override;
 
     static bool DestroyDB(const std::string& path_str);
+    void Start() override;
+    void Stop() override;
 };
 
 #endif // BITCOIN_DBWRAPPER_H

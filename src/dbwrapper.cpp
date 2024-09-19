@@ -480,6 +480,17 @@ MDBXWrapper::MDBXWrapper(const DBParams& params)
     LogInfo("Using obfuscation key for %s: %s\n", fs::PathToString(params.path), HexStr(GetObfuscateKey()));
 }
 
+void MDBXWrapper::Stop()
+{
+    DBContext().txn.commit();
+    Sync();
+}
+void MDBXWrapper::Start()
+{
+    DBContext().txn = DBContext().env.start_write();
+}
+
+
 MDBXWrapper::~MDBXWrapper() = default;
 
 void MDBXWrapper::Sync()

@@ -564,6 +564,10 @@ public:
     //! @sa ChainstateRole
     ChainstateRole GetRole() const EXCLUSIVE_LOCKS_REQUIRED(::cs_main);
 
+    void OpenCoinsDB();
+    void CloseCoinsDB();
+
+
     /**
      * Initialize the CoinsViews UTXO set database management data structures. The in-memory
      * cache is initialized separately.
@@ -1074,6 +1078,9 @@ public:
     //! The total number of bytes available for us to use across all leveldb
     //! coins databases. This will be split somehow across chainstates.
     int64_t m_total_coinsdb_cache{0};
+
+    void MakeMDBXHappy();
+    void MakeMDBXSad();
 
     //! Instantiate a new chainstate.
     //!
