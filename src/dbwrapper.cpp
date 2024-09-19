@@ -470,9 +470,11 @@ MDBXWrapper::MDBXWrapper(const DBParams& params)
 
     LogPrintf("Opening MDBX in %s\n", fs::PathToString(params.path));
 
+    DBContext().create_params.geometry.pagesize = 4096;
     // We need this because of some unpleasant (for us) passing around of the
     // Chainstate between threads during initialization.
     DBContext().operate_params.options.no_sticky_threads = true;
+    DBContext().operate_params.durability = mdbx::env::whole_fragile;
     // initialize the mdbx environment.
     DBContext().env = mdbx::env_managed(params.path, DBContext().create_params, DBContext().operate_params);
 
