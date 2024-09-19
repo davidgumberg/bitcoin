@@ -3,6 +3,8 @@
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
+#include "kernel/cs_main.h"
+#include "sync.h"
 #include <config/bitcoin-config.h> // IWYU pragma: keep
 
 #include <validation.h>
@@ -1957,12 +1959,14 @@ const CBlockIndex* Chainstate::SnapshotBase()
     return m_cached_snapshot_base;
 }
 
-void Chainstate::CloseCoinsDB()
+void Chainstate::CloseCoinsDB() EXCLUSIVE_LOCKS_REQUIRED(::cs_main)
 {
+    AssertLockHeld(::cs_main);
     m_coins_views->m_dbview.Stop();
 }
-void Chainstate::OpenCoinsDB()
+void Chainstate::OpenCoinsDB() EXCLUSIVE_LOCKS_REQUIRED(::cs_main)
 {
+    AssertLockHeld(::cs_main);
     m_coins_views->m_dbview.Start();
 }
 
@@ -5549,7 +5553,7 @@ bool Chainstate::ResizeCoinsCaches(size_t coinstip_size, size_t coinsdb_size)
     size_t old_coinstip_size = m_coinstip_cache_size_bytes;
     m_coinstip_cache_size_bytes = coinstip_size;
     m_coinsdb_cache_size_bytes = coinsdb_size;
-    CoinsDB().ResizeCache(coinsdb_size);
+    // CoinsDB().ResizeCache(coinsdb_size);
 
     LogPrintf("[%s] resized coinsdb cache to %.1f MiB\n",
         this->ToString(), coinsdb_size * (1.0 / 1024 / 1024));
@@ -5616,12 +5620,14 @@ std::vector<Chainstate*> ChainstateManager::GetAll()
     return out;
 }
 
-void ChainstateManager::MakeMDBXHappy()
+void ChainstateManager::MakeMDBXHappy() EXCLUSIVE_LOCKS_REQUIRED(::cs_main)
 {
+    AssertLockHeld(::cs_main);
     m_active_chainstate->OpenCoinsDB();
 }
-void ChainstateManager::MakeMDBXSad()
+void ChainstateManager::MakeMDBXSad() EXCLUSIVE_LOCKS_REQUIRED(::cs_main)
 {
+    AssertLockHeld(::cs_main);
     m_active_chainstate->CloseCoinsDB();
 }
 

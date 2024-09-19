@@ -327,8 +327,8 @@ void Shutdown(NodeContext& node)
 
     // FlushStateToDisk generates a ChainStateFlushed callback, which we should avoid missing
     if (node.chainman) {
-        node.chainman->MakeMDBXHappy();
         LOCK(cs_main);
+        node.chainman->MakeMDBXHappy();
         for (Chainstate* chainstate : node.chainman->GetAll()) {
             if (chainstate->CanFlushToDisk()) {
                 chainstate->ForceFlushStateToDisk();
@@ -363,7 +363,6 @@ void Shutdown(NodeContext& node)
                 chainstate->ResetCoinsViews();
             }
         }
-        node.chainman->MakeMDBXSad();
     }
     for (const auto& client : node.chain_clients) { client->stop();
     }
@@ -1792,9 +1791,16 @@ bool AppInitMain(NodeContext& node, interfaces::BlockAndHeaderTipInfo* tip_info)
         vImportFiles.push_back(fs::PathFromString(strFile));
     }
 
-    chainman.MakeMDBXSad();
+
+    {
+        LOCK(::cs_main);
+        chainman.MakeMDBXSad();
+    }
     node.background_init_thread = std::thread(&util::TraceThread, "initload", [=, &chainman, &args, &node] {
-        chainman.MakeMDBXHappy();
+        {
+            LOCK(::cs_main);
+            chainman.MakeMDBXHappy();
+        }
 
         ScheduleBatchPriority();
         // Import blocks
@@ -1818,7 +1824,10 @@ bool AppInitMain(NodeContext& node, interfaces::BlockAndHeaderTipInfo* tip_info)
             LoadMempool(*pool, ShouldPersistMempool(args) ? MempoolPath(args) : fs::path{}, chainman.ActiveChainstate(), {});
             pool->SetLoadTried(!chainman.m_interrupt);
         }
-        chainman.MakeMDBXSad();
+        {
+            LOCK(::cs_main);
+            chainman.MakeMDBXSad();
+        }
     });
 
     // Wait for genesis block to be processed
