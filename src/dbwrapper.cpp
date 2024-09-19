@@ -538,10 +538,13 @@ size_t MDBXWrapper::EstimateSizeImpl(Span<const std::byte> key1, Span<const std:
 
 bool MDBXWrapper::WriteBatch(CDBBatchBase& _batch, bool fSync)
 {
+    auto info = DBContext().env.get_info();
+    auto stat = DBContext().env.get_stat();
     // DBContext().txn.reset_reading();
     auto& batch = static_cast<MDBXBatch&>(_batch);
 
-    LogDebug(BCLog::COINDB, "There are %d many readers before this batchwrite.\n", DBContext().env.get_info().mi_numreaders);
+    LogDebug(BCLog::COINDB, "mi_numreaders: %d overflowpages: %d\n",
+        info.mi_numreaders, stat.ms_overflow_pages);
 
     batch.CommitAndReset();
 
