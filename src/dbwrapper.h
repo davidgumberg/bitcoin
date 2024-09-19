@@ -366,9 +366,6 @@ class MDBXBatch : public CDBBatchBase
     friend class MDBXWrapper;
 
 private:
-    struct MDBXWriteBatchImpl;
-    std::unique_ptr<MDBXWriteBatchImpl> m_impl_batch;
-
     void WriteImpl(Span<const std::byte> key, DataStream& value) override;
     void EraseImpl(Span<const std::byte> key) override;
 
@@ -378,6 +375,7 @@ public:
      */
     explicit MDBXBatch(const CDBWrapperBase& _parent);
     ~MDBXBatch();
+
     void Clear() override;
     void CommitAndReset();
 
@@ -402,8 +400,7 @@ public:
      * @param[in] _parent          Parent CDBWrapper instance.
      * @param[in] db_context       MDBXWrapper DBContext.
      */
-    MDBXIterator(const CDBWrapperBase& _parent, const MDBXContext &db_context);
-
+    MDBXIterator(const CDBWrapperBase& _parent, MDBXContext &db_context);
     ~MDBXIterator() override;
 
     bool Valid() const override;

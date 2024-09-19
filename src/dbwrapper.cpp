@@ -411,13 +411,8 @@ struct MDBXContext {
     // MDBX environment handle
     mdbx::env_managed env;
     // MDBX txn and map
-    mdbx::txn_managed read_txn;
+    mdbx::txn_managed txn;
     mdbx::map_handle map;
-
-    ~MDBXContext() {
-        read_txn.abort();
-        env.close();
-    }
 };
 
 struct CDBIterator::IteratorImpl {
@@ -476,11 +471,8 @@ MDBXWrapper::MDBXWrapper(const DBParams& params)
     // initialize the mdbx environment.
     DBContext().env = mdbx::env_managed(params.path, DBContext().create_params, DBContext().operate_params);
 
-    DBContext().read_txn = DBContext().env.start_read();
-    DBContext().map = DBContext().read_txn.open_map(nullptr, mdbx::key_mode::usual, mdbx::value_mode::single);
-
-    // Open readers induce really ugly append-only LMDB behavior
-    DBContext().read_txn.park_reading(true);
+    DBContext().txn = DBContext().env.start_write();
+    DBContext().map = DBContext().txn.open_map(nullptr, mdbx::key_mode::usual, mdbx::value_mode::single);
 
     if (params.obfuscate && WriteObfuscateKeyIfNotExists()){
         LogInfo("Wrote new obfuscate key for %s: %s\n", fs::PathToString(params.path), HexStr(obfuscate_key));
@@ -499,8 +491,7 @@ std::optional<std::string> MDBXWrapper::ReadImpl(Span<const std::byte> key) cons
 {
     mdbx::slice slKey(CharCast(key.data()), key.size()), slValue;
 
-    DBContext().read_txn.unpark_reading();
-    slValue = DBContext().read_txn.get(DBContext().map, slKey, mdbx::slice::invalid());
+    slValue = DBContext().txn.get(DBContext().map, slKey, mdbx::slice::invalid());
 
     std::optional<std::string> ret;
 
@@ -510,22 +501,18 @@ std::optional<std::string> MDBXWrapper::ReadImpl(Span<const std::byte> key) cons
     else {
         ret = std::string(slValue.as_string());
     }
-    DBContext().read_txn.park_reading(true);
     return ret;
 }
 
 bool MDBXWrapper::ExistsImpl(Span<const std::byte> key) const {
     mdbx::slice slKey(CharCast(key.data()), key.size()), slValue;
 
-    DBContext().read_txn.unpark_reading();
-    slValue = DBContext().read_txn.get(DBContext().map, slKey, mdbx::slice::invalid());
+    slValue = DBContext().txn.get(DBContext().map, slKey, mdbx::slice::invalid());
 
     if(slValue == mdbx::slice::invalid()) {
-        DBContext().read_txn.park_reading(true);
         return false;
     }
 
-    DBContext().read_txn.park_reading(true);
     return true;
 }
 
@@ -540,8 +527,11 @@ bool MDBXWrapper::WriteBatch(CDBBatchBase& _batch, bool fSync)
 {
     auto info = DBContext().env.get_info();
     auto stat = DBContext().env.get_stat();
+
     // DBContext().txn.reset_reading();
-    auto& batch = static_cast<MDBXBatch&>(_batch);
+    auto &batch = static_cast<MDBXBatch&>(_batch);
+    auto &parent = static_cast<const MDBXWrapper&>(batch.m_parent);
+    parent.DBContext().txn.commit();
 
     LogDebug(BCLog::COINDB, "mi_numreaders: %d overflowpages: %d\n",
         info.mi_numreaders, stat.ms_overflow_pages);
@@ -562,38 +552,27 @@ size_t MDBXWrapper::DynamicMemoryUsage() const
     return size_t{0};
 }
 
-struct MDBXBatch::MDBXWriteBatchImpl {
-    mdbx::txn_managed txn;
-    mdbx::map_handle map;
-};
-
-MDBXBatch::MDBXBatch (const CDBWrapperBase& _parent) : CDBBatchBase(_parent)
-{
-    const MDBXWrapper& parent = static_cast<const MDBXWrapper&>(m_parent);
-    m_impl_batch = std::make_unique<MDBXWriteBatchImpl>();
-
-    m_impl_batch->txn = parent.DBContext().env.start_write();
-    m_impl_batch->map = parent.DBContext().map;
-};
+MDBXBatch::MDBXBatch(const CDBWrapperBase& _parent): CDBBatchBase(_parent) {}
 
 MDBXBatch::~MDBXBatch()
 {
-    if(m_impl_batch->txn){
-        m_impl_batch->txn.abort();
+    auto &parent = static_cast<const MDBXWrapper&>(m_parent);
+    if(parent.DBContext().txn){
+        parent.DBContext().txn.abort();
     }
 }
 
 void MDBXBatch::CommitAndReset()
 {
-    m_impl_batch->txn.commit();
-
     auto &parent = static_cast<const MDBXWrapper&>(m_parent);
-    m_impl_batch->txn = parent.DBContext().env.start_write();
+    parent.DBContext().txn.commit();
+    parent.DBContext().txn = parent.DBContext().env.start_write();
 }
 
 void MDBXBatch::Clear()
 {
-    m_impl_batch->txn.abort();
+    auto &parent = static_cast<const MDBXWrapper&>(m_parent);
+    parent.DBContext().txn.abort();
 }
 
 void MDBXBatch::WriteImpl(Span<const std::byte> key, DataStream& value)
@@ -605,7 +584,7 @@ void MDBXBatch::WriteImpl(Span<const std::byte> key, DataStream& value)
     mdbx::slice slValue(CharCast(value.data()), value.size());
 
     try {
-        m_impl_batch->txn.put(parent.DBContext().map, slKey, slValue, mdbx::put_mode::upsert);
+        parent.DBContext().txn.put(parent.DBContext().map, slKey, slValue, mdbx::put_mode::upsert);
     }
     catch (mdbx::error err) {
         const std::string errmsg = "Fatal MDBX error: " + err.message();
@@ -619,35 +598,35 @@ void MDBXBatch::EraseImpl(Span<const std::byte> key)
     auto &parent = static_cast<const MDBXWrapper&>(m_parent);
 
     mdbx::slice slKey(CharCast(key.data()), key.size());
-    m_impl_batch->txn.erase(parent.DBContext().map, slKey);
+    parent.DBContext().txn.erase(parent.DBContext().map, slKey);
 }
 
 size_t MDBXBatch::SizeEstimate() const
 {
-    return m_impl_batch->txn.size_current();
+    auto &parent = static_cast<const MDBXWrapper&>(m_parent);
+    return parent.DBContext().txn.size_current();
 }
 
 struct MDBXIterator::IteratorImpl {
-    const std::unique_ptr<mdbx::txn_managed> read_txn;
+    MDBXContext &context;
     const std::unique_ptr<mdbx::cursor_managed> cursor;
 
-    IteratorImpl(mdbx::txn_managed&& txn, mdbx::cursor_managed&& cur)
-        : read_txn(std::make_unique<mdbx::txn_managed>(std::move(txn)))
-        , cursor(std::make_unique<mdbx::cursor_managed>(std::move(cur)))
+    IteratorImpl(MDBXContext &context, mdbx::cursor_managed&& cur)
+        : context(context),
+        cursor(std::make_unique<mdbx::cursor_managed>(std::move(cur)))
     {}
 };
 
-MDBXIterator::MDBXIterator(const CDBWrapperBase& _parent, const MDBXContext &db_context) : CDBIteratorBase(_parent)
+MDBXIterator::MDBXIterator(const CDBWrapperBase& _parent, MDBXContext &db_context) : CDBIteratorBase(_parent)
 {
-    auto read_txn = db_context.env.start_read();
-    auto cursor = read_txn.open_cursor(db_context.map);
+    auto cursor = db_context.txn.open_cursor(db_context.map);
 
-    m_impl_iter = std::unique_ptr<IteratorImpl>(new IteratorImpl(std::move(read_txn), std::move(cursor)));
+    m_impl_iter = std::unique_ptr<IteratorImpl>(new IteratorImpl(db_context, std::move(cursor)));
 }
 
 MDBXIterator::~MDBXIterator()
 {
-    m_impl_iter->read_txn->abort();
+    m_impl_iter->cursor->close();
 }
 
 void MDBXIterator::SeekImpl(Span<const std::byte> key)
@@ -663,12 +642,10 @@ CDBIteratorBase* MDBXWrapper::NewIterator()
 
 bool MDBXWrapper::IsEmpty()
 {
-    DBContext().read_txn.unpark_reading();
-    auto cursor{DBContext().read_txn.open_cursor(DBContext().map)};
+    auto cursor{DBContext().txn.open_cursor(DBContext().map)};
 
     // the done parameter indicates whether or not the cursor move succeeded.
     auto ret = !cursor.to_first(/*throw_notfound=*/false).done;
-    DBContext().read_txn.park_reading(true);
     return ret;
 }
 
