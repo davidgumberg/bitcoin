@@ -418,6 +418,8 @@ struct MDBXContext {
         read_txn.abort();
         env.close();
     }
+
+    mutable bool is_cursor;
 };
 
 struct CDBIterator::IteratorImpl {
@@ -473,7 +475,7 @@ MDBXWrapper::MDBXWrapper(const DBParams& params)
     DBContext().create_params.geometry.pagesize = 4096;
     // We need this because of some unpleasant (for us) passing around of the
     // Chainstate between threads during initialization.
-    DBContext().operate_params.options.no_sticky_threads = true;
+    // DBContext().operate_params.options.no_sticky_threads = true;
     DBContext().operate_params.durability = mdbx::env::whole_fragile;
     // initialize the mdbx environment.
     DBContext().env = mdbx::env_managed(params.path, DBContext().create_params, DBContext().operate_params);
@@ -499,6 +501,7 @@ void MDBXWrapper::Sync()
 
 std::optional<std::string> MDBXWrapper::ReadImpl(Span<const std::byte> key) const
 {
+    assert(DBContext().is_cursor == false);
     mdbx::slice slKey(CharCast(key.data()), key.size()), slValue;
 
     DBContext().read_txn.unpark_reading();
@@ -540,6 +543,7 @@ size_t MDBXWrapper::EstimateSizeImpl(Span<const std::byte> key1, Span<const std:
 
 bool MDBXWrapper::WriteBatch(CDBBatchBase& _batch, bool fSync)
 {
+    assert(DBContext().is_cursor == false);
     auto info = DBContext().env.get_info();
     auto stat = DBContext().env.get_stat();
     // DBContext().txn.reset_reading();
@@ -602,6 +606,7 @@ void MDBXBatch::WriteImpl(Span<const std::byte> key, DataStream& value)
 {
     auto &parent = static_cast<const MDBXWrapper&>(m_parent);
 
+    assert(parent.DBContext().is_cursor == false);
     mdbx::slice slKey(CharCast(key.data()), key.size());
     value.Xor(m_parent.GetObfuscateKey());
     mdbx::slice slValue(CharCast(value.data()), value.size());
@@ -620,6 +625,8 @@ void MDBXBatch::EraseImpl(Span<const std::byte> key)
 {
     auto &parent = static_cast<const MDBXWrapper&>(m_parent);
 
+    assert(parent.DBContext().is_cursor == false);
+
     mdbx::slice slKey(CharCast(key.data()), key.size());
     m_impl_batch->txn.erase(parent.DBContext().map, slKey);
 }
@@ -630,52 +637,67 @@ size_t MDBXBatch::SizeEstimate() const
 }
 
 struct MDBXIterator::IteratorImpl {
-    const std::unique_ptr<mdbx::txn_managed> read_txn;
+    MDBXContext &context;
     const std::unique_ptr<mdbx::cursor_managed> cursor;
 
-    IteratorImpl(mdbx::txn_managed&& txn, mdbx::cursor_managed&& cur)
-        : read_txn(std::make_unique<mdbx::txn_managed>(std::move(txn)))
+    IteratorImpl(MDBXContext &context, mdbx::cursor_managed&& cur)
+        : context(context)
         , cursor(std::make_unique<mdbx::cursor_managed>(std::move(cur)))
     {}
 };
 
-MDBXIterator::MDBXIterator(const CDBWrapperBase& _parent, const MDBXContext &db_context) : CDBIteratorBase(_parent)
+MDBXIterator::MDBXIterator(const CDBWrapperBase& _parent, MDBXContext &db_context) : CDBIteratorBase(_parent)
 {
-    auto read_txn = db_context.env.start_read();
-    auto cursor = read_txn.open_cursor(db_context.map);
+    assert(db_context.is_cursor == false);
+    db_context.is_cursor = true;
+    db_context.read_txn.unpark_reading();
 
-    m_impl_iter = std::unique_ptr<IteratorImpl>(new IteratorImpl(std::move(read_txn), std::move(cursor)));
+    auto cursor = db_context.read_txn.open_cursor(db_context.map);
+
+    m_impl_iter = std::unique_ptr<IteratorImpl>(new IteratorImpl(db_context, std::move(cursor)));
 }
 
 MDBXIterator::~MDBXIterator()
 {
-    m_impl_iter->read_txn->abort();
+    assert(m_impl_iter->context.is_cursor == true);
+    m_impl_iter->cursor->close();
+    m_impl_iter->context.is_cursor = false;
+
+    m_impl_iter->context.read_txn.park_reading();
 }
 
 void MDBXIterator::SeekImpl(Span<const std::byte> key)
 {
+    assert(m_impl_iter->context.is_cursor == true);
     mdbx::slice slKey(CharCast(key.data()), key.size());
     valid = m_impl_iter->cursor->seek(slKey);
 }
 
 CDBIteratorBase* MDBXWrapper::NewIterator()
 {
+    assert(DBContext().is_cursor == false);
     return new MDBXIterator{*this, DBContext()};
 }
 
 bool MDBXWrapper::IsEmpty()
 {
+    assert(DBContext().is_cursor == false);
     DBContext().read_txn.unpark_reading();
+    DBContext().is_cursor = true;
+
     auto cursor{DBContext().read_txn.open_cursor(DBContext().map)};
 
     // the done parameter indicates whether or not the cursor move succeeded.
     auto ret = !cursor.to_first(/*throw_notfound=*/false).done;
+    cursor.close();
+    DBContext().is_cursor = false;
     DBContext().read_txn.park_reading(true);
     return ret;
 }
 
 Span<const std::byte> MDBXIterator::GetKeyImpl() const
 {
+    assert(m_impl_iter->context.is_cursor == true);
     // 'AsBytes(Span(...' is necessary since mdbx::slice::bytes() returns std::span<char8_t>
     // Rather than Span<std::byte>
     return AsBytes(Span(m_impl_iter->cursor->current().key.bytes()));
@@ -683,6 +705,7 @@ Span<const std::byte> MDBXIterator::GetKeyImpl() const
 
 Span<const std::byte> MDBXIterator::GetValueImpl() const
 {
+    assert(m_impl_iter->context.is_cursor == true);
     // 'AsBytes(Span(...' is necessary since mdbx::slice::bytes() returns std::span<char8_t>
     // Rather than Span<std::byte>
     return AsBytes(Span(m_impl_iter->cursor->current().value.bytes()));
@@ -694,11 +717,13 @@ bool MDBXIterator::Valid() const {
 
 void MDBXIterator::SeekToFirst()
 {
+    assert(m_impl_iter->context.is_cursor == true);
     valid = m_impl_iter->cursor->to_first(/*throw_notfound=*/false).done;
 }
 
 void MDBXIterator::Next()
 {
+    assert(m_impl_iter->context.is_cursor == true);
     valid = m_impl_iter->cursor->to_next(/*throw_notfound=*/false).done;
 }
 
