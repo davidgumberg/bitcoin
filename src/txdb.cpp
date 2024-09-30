@@ -27,7 +27,7 @@ static constexpr uint8_t DB_HEAD_BLOCKS{'H'};
 
 bool CCoinsViewDB::NeedsUpgrade()
 {
-    /* Skip this temporarily for mdbx
+    /* Skip this temporarily for lmdb
     std::unique_ptr<CDBIteratorBase> cursor{m_db->NewIterator()};
     // DB_COINS was deprecated in v0.15.0, commit
     // 1088b02f0ccd7358d2b7076bb9e122d59d502d02
@@ -52,7 +52,7 @@ struct CoinEntry {
 CCoinsViewDB::CCoinsViewDB(DBParams db_params, CoinsViewOptions options) :
     m_db_params{std::move(db_params)},
     m_options{std::move(options)},
-    m_db{std::make_unique<MDBXWrapper>(m_db_params)} { }
+    m_db{std::make_unique<LMDBWrapper>(m_db_params)} { }
 
 void CCoinsViewDB::ResizeCache(size_t new_cache_size)
 {
@@ -64,7 +64,7 @@ void CCoinsViewDB::ResizeCache(size_t new_cache_size)
         m_db.reset();
         m_db_params.cache_bytes = new_cache_size;
         m_db_params.wipe_data = false;
-        m_db = std::make_unique<MDBXWrapper>(m_db_params);
+        m_db = std::make_unique<LMDBWrapper>(m_db_params);
     }
 }
 
@@ -92,7 +92,7 @@ std::vector<uint256> CCoinsViewDB::GetHeadBlocks() const {
 }
 
 bool CCoinsViewDB::BatchWrite(CoinsViewCacheCursor& cursor, const uint256 &hashBlock) {
-    MDBXBatch batch(*m_db);
+    LMDBBatch batch(*m_db);
     size_t count = 0;
     size_t changed = 0;
     assert(!hashBlock.IsNull());
