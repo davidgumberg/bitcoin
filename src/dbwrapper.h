@@ -310,6 +310,9 @@ public:
         ssKey2 << key_end;
         return EstimateSizeImpl(ssKey1, ssKey2);
     }
+
+    virtual void Start() = 0;
+    virtual void Stop() = 0;
 };
 
 template<typename V> bool CDBIteratorBase::GetValue(V& value) {
@@ -354,6 +357,9 @@ public:
     bool IsEmpty() override;
 
     static bool DestroyDB(const std::string& path_str);
+
+    inline void Start() override { assert(0); }
+    inline void Stop() override { assert(0); }
 };
 
 // MDBXContext is defined in mdbx.cpp to avoid dependency on libmdbx here
@@ -446,6 +452,10 @@ public:
     bool IsEmpty() override;
 
     static bool DestroyDB(const std::string& path_str);
+    void Start() override;
+    void Stop() override;
+
+    bool happy;
 };
 
 #endif // BITCOIN_DBWRAPPER_H

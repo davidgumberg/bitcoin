@@ -3,6 +3,7 @@
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
+#include "validation.h"
 #include <config/bitcoin-config.h> // IWYU pragma: keep
 
 #include <net.h>
@@ -2963,6 +2964,7 @@ Mutex NetEventsInterface::g_msgproc_mutex;
 
 void CConnman::ThreadMessageHandler()
 {
+    (*chainman)->MakeMDBXHappy();
     LOCK(NetEventsInterface::g_msgproc_mutex);
 
     while (!flagInterruptMsgProc)
@@ -2982,13 +2984,17 @@ void CConnman::ThreadMessageHandler()
                 // Receive messages
                 bool fMoreNodeWork = m_msgproc->ProcessMessages(pnode, flagInterruptMsgProc);
                 fMoreWork |= (fMoreNodeWork && !pnode->fPauseSend);
-                if (flagInterruptMsgProc)
+                if (flagInterruptMsgProc) {
+                    (*chainman)->MakeMDBXSad();
                     return;
+                }
                 // Send messages
                 m_msgproc->SendMessages(pnode);
 
-                if (flagInterruptMsgProc)
+                if (flagInterruptMsgProc) {
+                    (*chainman)->MakeMDBXSad();
                     return;
+                }
             }
         }
 
@@ -2998,6 +3004,8 @@ void CConnman::ThreadMessageHandler()
         }
         fMsgProcWake = false;
     }
+
+    (*chainman)->MakeMDBXSad();
 }
 
 void CConnman::ThreadI2PAcceptIncoming()
@@ -3176,7 +3184,8 @@ void CConnman::SetNetworkActive(bool active)
 }
 
 CConnman::CConnman(uint64_t nSeed0In, uint64_t nSeed1In, AddrMan& addrman_in,
-                   const NetGroupManager& netgroupman, const CChainParams& params, bool network_active)
+                   const NetGroupManager& netgroupman,
+                   const CChainParams& params, bool network_active)
     : addrman(addrman_in)
     , m_netgroupman{netgroupman}
     , nSeed0(nSeed0In)
