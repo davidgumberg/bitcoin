@@ -565,24 +565,19 @@ size_t MDBXWrapper::DynamicMemoryUsage() const
 }
 
 struct MDBXBatch::MDBXWriteBatchImpl {
-    mdbx::txn_managed txn;
-    mdbx::map_handle map;
+    const MDBXWrapper &parent;
 };
 
 MDBXBatch::MDBXBatch (const CDBWrapperBase& _parent) : CDBBatchBase(_parent)
 {
     const MDBXWrapper& parent = static_cast<const MDBXWrapper&>(m_parent);
-    m_impl_batch = std::make_unique<MDBXWriteBatchImpl>();
+    m_impl_batch = std::make_unique<MDBXWriteBatchImpl>(parent);
 
-    m_impl_batch->txn = parent.DBContext().env.start_write();
-    m_impl_batch->map = parent.DBContext().map;
 };
 
 MDBXBatch::~MDBXBatch()
 {
-    if(m_impl_batch->txn){
-        m_impl_batch->txn.abort();
-    }
+    curso
 }
 
 void MDBXBatch::CommitAndReset()
