@@ -68,6 +68,15 @@ void CCoinsViewDB::ResizeCache(size_t new_cache_size)
     }
 }
 
+void CCoinsViewDB::Stop()
+{
+    m_db->Stop();
+}
+void CCoinsViewDB::Start()
+{
+    m_db->Start();
+}
+
 bool CCoinsViewDB::GetCoin(const COutPoint &outpoint, Coin &coin) const {
     return m_db->Read(CoinEntry(&outpoint), coin);
 }
@@ -128,8 +137,7 @@ bool CCoinsViewDB::BatchWrite(CoinsViewCacheCursor& cursor, const uint256 &hashB
         }
         count++;
         it = cursor.NextAndMaybeErase(*it);
-        if (batch.SizeEstimate() > m_options.batch_write_bytes) {
-            LogDebug(BCLog::COINDB, "Writing partial batch of %.2f MiB\n", batch.SizeEstimate() * (1.0 / 1048576.0));
+        if (changed % 262144 == 0) {
             m_db->WriteBatch(batch);
             if (m_options.simulate_crash_ratio) {
                 static FastRandomContext rng;

@@ -772,6 +772,8 @@ private:
     ChainstateManager& m_chainman;
     CTxMemPool& m_mempool;
 
+    bool mdbx_started = false;
+
     /** Synchronizes tx download including TxRequestTracker, rejection filters, and TxOrphanage.
      * Lock invariants:
      * - A txhash (txid or wtxid) in m_txrequest is not also in m_orphanage.

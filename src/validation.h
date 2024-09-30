@@ -514,6 +514,7 @@ protected:
      */
     Mutex m_chainstate_mutex;
 
+
     //! Optional mempool that is kept in sync with the chain.
     //! Only the active chainstate has a mempool.
     CTxMemPool* m_mempool;
@@ -558,6 +559,9 @@ public:
     //!
     //! @sa ChainstateRole
     ChainstateRole GetRole() const EXCLUSIVE_LOCKS_REQUIRED(::cs_main);
+
+    void OpenCoinsDB();
+    void CloseCoinsDB();
 
     /**
      * Initialize the CoinsViews UTXO set database management data structures. The in-memory
@@ -965,6 +969,11 @@ private:
     SteadyClock::duration GUARDED_BY(::cs_main) time_post_connect{};
 
 public:
+    /**
+     * The DB Mutex must be held in order to modify the on-disk db.
+     */
+    Mutex m_db_mutex;
+
     using Options = kernel::ChainstateManagerOpts;
 
     explicit ChainstateManager(const util::SignalInterrupt& interrupt, Options options, node::BlockManager::Options blockman_options);
@@ -1069,6 +1078,10 @@ public:
     //! The total number of bytes available for us to use across all leveldb
     //! coins databases. This will be split somehow across chainstates.
     int64_t m_total_coinsdb_cache{0};
+
+    void MakeMDBXHappy();
+    void MakeMDBXSad();
+
 
     //! Instantiate a new chainstate.
     //!

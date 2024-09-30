@@ -6,6 +6,7 @@
 #ifndef BITCOIN_NET_H
 #define BITCOIN_NET_H
 
+#include "validation.h"
 #include <bip324.h>
 #include <chainparams.h>
 #include <common/bloom.h>
@@ -1020,7 +1021,6 @@ public:
     */
     virtual bool SendMessages(CNode* pnode) EXCLUSIVE_LOCKS_REQUIRED(g_msgproc_mutex) = 0;
 
-
 protected:
     /**
      * Protected destructor so that instances can only be deleted by derived classes.
@@ -1252,6 +1252,8 @@ public:
     bool ShouldRunInactivityChecks(const CNode& node, std::chrono::seconds now) const;
 
     bool MultipleManualOrFullOutboundConns(Network net) const EXCLUSIVE_LOCKS_REQUIRED(m_nodes_mutex);
+
+    std::unique_ptr<ChainstateManager>* chainman;
 
 private:
     struct ListenSocket {

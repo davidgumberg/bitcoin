@@ -329,12 +329,15 @@ void Shutdown(NodeContext& node)
 
     // FlushStateToDisk generates a ChainStateFlushed callback, which we should avoid missing
     if (node.chainman) {
+        LOCK(node.chainman->m_db_mutex);
         LOCK(cs_main);
+        node.chainman->MakeMDBXHappy();
         for (Chainstate* chainstate : node.chainman->GetAll()) {
             if (chainstate->CanFlushToDisk()) {
                 chainstate->ForceFlushStateToDisk();
             }
         }
+        node.chainman->MakeMDBXSad();
     }
 
     // After there are no more peers/RPC left to give us new data which may generate
@@ -355,7 +358,9 @@ void Shutdown(NodeContext& node)
     // next startup faster by avoiding rescan.
 
     if (node.chainman) {
+        LOCK(node.chainman->m_db_mutex);
         LOCK(cs_main);
+        node.chainman->MakeMDBXHappy();
         for (Chainstate* chainstate : node.chainman->GetAll()) {
             if (chainstate->CanFlushToDisk()) {
                 chainstate->ForceFlushStateToDisk();
@@ -1221,6 +1226,7 @@ static ChainstateLoadResult InitAndLoadChainstate(
         return {ChainstateLoadStatus::FAILURE_FATAL, strprintf(Untranslated("Failed to initialize ChainstateManager: %s"), e.what())};
     }
     ChainstateManager& chainman = *node.chainman;
+    node.connman->chainman = &node.chainman;
     // This is defined and set here instead of inline in validation.h to avoid a hard
     // dependency between validation and index/base, since the latter is not in
     // libbitcoinkernel.
@@ -1275,6 +1281,12 @@ static ChainstateLoadResult InitAndLoadChainstate(
         if (status == node::ChainstateLoadStatus::SUCCESS) {
             LogPrintf(" block index %15dms\n", Ticks<std::chrono::milliseconds>(SteadyClock::now() - load_block_index_start_time));
         }
+    }
+
+    {
+        LOCK(node.chainman->m_db_mutex);
+        LOCK(::cs_main);
+        node.chainman->MakeMDBXSad();
     }
     return {status, error};
 };
@@ -1789,9 +1801,17 @@ bool AppInitMain(NodeContext& node, interfaces::BlockAndHeaderTipInfo* tip_info)
     }
 
     node.background_init_thread = std::thread(&util::TraceThread, "initload", [=, &chainman, &args, &node] {
-        ScheduleBatchPriority();
-        // Import blocks
-        ImportBlocks(chainman, vImportFiles);
+        LOCK(chainman.m_db_mutex);
+        {
+            LOCK(::cs_main);
+            chainman.MakeMDBXHappy();
+        }
+            // Import blocks
+            ImportBlocks(chainman, vImportFiles);
+        {
+            LOCK(::cs_main);
+            chainman.MakeMDBXSad();
+        }
         if (args.GetBoolArg("-stopafterblockimport", DEFAULT_STOPAFTERBLOCKIMPORT)) {
             LogPrintf("Stopping after block import\n");
             if (!(*Assert(node.shutdown))()) {

@@ -1953,6 +1953,15 @@ const CBlockIndex* Chainstate::SnapshotBase()
     return m_cached_snapshot_base;
 }
 
+void Chainstate::CloseCoinsDB()
+{
+    m_coins_views->m_dbview.Stop();
+}
+void Chainstate::OpenCoinsDB()
+{
+    m_coins_views->m_dbview.Start();
+}
+
 void Chainstate::InitCoinsDB(
     size_t cache_size_bytes,
     bool in_memory,
@@ -5596,6 +5605,20 @@ std::vector<Chainstate*> ChainstateManager::GetAll()
     }
 
     return out;
+}
+
+void ChainstateManager::MakeMDBXHappy()
+{
+    AssertLockHeld(::cs_main);
+    AssertLockHeld(m_db_mutex);
+    m_active_chainstate->OpenCoinsDB();
+}
+
+void ChainstateManager::MakeMDBXSad()
+{
+    AssertLockHeld(::cs_main);
+    AssertLockHeld(m_db_mutex);
+    m_active_chainstate->CloseCoinsDB();
 }
 
 Chainstate& ChainstateManager::InitializeChainstate(CTxMemPool* mempool)

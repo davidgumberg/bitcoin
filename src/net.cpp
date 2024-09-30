@@ -3,6 +3,7 @@
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
+#include "validation.h"
 #include <config/bitcoin-config.h> // IWYU pragma: keep
 
 #include <net.h>
@@ -2964,6 +2965,11 @@ Mutex NetEventsInterface::g_msgproc_mutex;
 
 void CConnman::ThreadMessageHandler()
 {
+    LOCK((*chainman)->m_db_mutex);
+    {
+        LOCK(::cs_main);
+        (*chainman)->MakeMDBXHappy();
+    }
     LOCK(NetEventsInterface::g_msgproc_mutex);
 
     while (!flagInterruptMsgProc)
@@ -2983,13 +2989,19 @@ void CConnman::ThreadMessageHandler()
                 // Receive messages
                 bool fMoreNodeWork = m_msgproc->ProcessMessages(pnode, flagInterruptMsgProc);
                 fMoreWork |= (fMoreNodeWork && !pnode->fPauseSend);
-                if (flagInterruptMsgProc)
+                if (flagInterruptMsgProc) {
+                    LOCK(::cs_main);
+                    (*chainman)->MakeMDBXSad();
                     return;
+                }
                 // Send messages
                 m_msgproc->SendMessages(pnode);
 
-                if (flagInterruptMsgProc)
+                if (flagInterruptMsgProc) {
+                    LOCK(::cs_main);
+                    (*chainman)->MakeMDBXSad();
                     return;
+                }
             }
         }
 
@@ -2998,6 +3010,11 @@ void CConnman::ThreadMessageHandler()
             condMsgProc.wait_until(lock, std::chrono::steady_clock::now() + std::chrono::milliseconds(100), [this]() EXCLUSIVE_LOCKS_REQUIRED(mutexMsgProc) { return fMsgProcWake; });
         }
         fMsgProcWake = false;
+    }
+
+    {
+        LOCK(::cs_main);
+        (*chainman)->MakeMDBXSad();
     }
 }
 
@@ -3141,7 +3158,8 @@ void CConnman::SetNetworkActive(bool active)
 }
 
 CConnman::CConnman(uint64_t nSeed0In, uint64_t nSeed1In, AddrMan& addrman_in,
-                   const NetGroupManager& netgroupman, const CChainParams& params, bool network_active)
+                   const NetGroupManager& netgroupman,
+                   const CChainParams& params, bool network_active)
     : addrman(addrman_in)
     , m_netgroupman{netgroupman}
     , nSeed0(nSeed0In)
@@ -3226,6 +3244,7 @@ bool CConnman::InitBinds(const Options& options)
 
 bool CConnman::Start(CScheduler& scheduler, const Options& connOptions)
 {
+    LOCK(::cs_main);
     AssertLockNotHeld(m_total_bytes_sent_mutex);
     Init(connOptions);
 
