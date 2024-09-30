@@ -356,18 +356,18 @@ public:
     static bool DestroyDB(const std::string& path_str);
 };
 
-// MDBXContext is defined in mdbx.cpp to avoid dependency on libmdbx here
-struct MDBXContext;
+// LMDBContext is defined in mdbx.cpp to avoid dependency on libmdbx here
+struct LMDBContext;
 
-/** Batch of changes queued to be written to an MDBXWrapper */
-class MDBXBatch : public CDBBatchBase
+/** Batch of changes queued to be written to an LMDBWrapper */
+class LMDBBatch : public CDBBatchBase
 {
-    // We want MDBXBatch to be able to access DBContext()
-    friend class MDBXWrapper;
+    // We want LMDBBatch to be able to access DBContext()
+    friend class LMDBWrapper;
 
 private:
-    struct MDBXWriteBatchImpl;
-    std::unique_ptr<MDBXWriteBatchImpl> m_impl_batch;
+    struct LMDBWriteBatchImpl;
+    std::unique_ptr<LMDBWriteBatchImpl> m_impl_batch;
 
     void WriteImpl(Span<const std::byte> key, DataStream& value) override;
     void EraseImpl(Span<const std::byte> key) override;
@@ -376,16 +376,16 @@ public:
     /**
      * @param[in] _parent   CDBWrapper that this batch is to be submitted to
      */
-    explicit MDBXBatch(const CDBWrapperBase& _parent);
-    ~MDBXBatch();
+    explicit LMDBBatch(const CDBWrapperBase& _parent);
+    ~LMDBBatch();
     void Clear() override;
     void CommitAndReset();
 
     size_t SizeEstimate() const override;
 };
 
-/** An iterator that maps to MDBX's cursor */
-class MDBXIterator : public CDBIteratorBase
+/** An iterator that maps to LMDB's cursor */
+class LMDBIterator : public CDBIteratorBase
 {
 public:
     struct IteratorImpl;
@@ -400,25 +400,25 @@ private:
 public:
     /**
      * @param[in] _parent          Parent CDBWrapper instance.
-     * @param[in] db_context       MDBXWrapper DBContext.
+     * @param[in] db_context       LMDBWrapper DBContext.
      */
-    MDBXIterator(const CDBWrapperBase& _parent, const MDBXContext &db_context);
+    LMDBIterator(const CDBWrapperBase& _parent, const LMDBContext &db_context);
 
-    ~MDBXIterator() override;
+    ~LMDBIterator() override;
 
     bool Valid() const override;
     void SeekToFirst() override;
     void Next() override;
 };
 
-class MDBXWrapper : public CDBWrapperBase
+class LMDBWrapper : public CDBWrapperBase
 {
-    friend class MDBXIterator;
-    friend class MDBXBatch; // We want MDBXBatch to be able to access the env and sync
+    friend class LMDBIterator;
+    friend class LMDBBatch; // We want LMDBBatch to be able to access the env and sync
                             // Is there a better mechanism than friend class?
 private:
     //! holds all mdbx-specific fields of this class
-    std::unique_ptr<MDBXContext> m_db_context;
+    std::unique_ptr<LMDBContext> m_db_context;
     auto& DBContext() const LIFETIMEBOUND { return *Assert(m_db_context); }
 
     std::optional<std::string> ReadImpl(Span<const std::byte> key) const override;
@@ -426,14 +426,14 @@ private:
     size_t EstimateSizeImpl(Span<const std::byte> key1, Span<const std::byte> key2) const override;
 
     inline std::unique_ptr<CDBBatchBase> CreateBatch() const override {
-        return std::make_unique<MDBXBatch>(*this);
+        return std::make_unique<LMDBBatch>(*this);
     }
 
     void Sync();
 
 public:
-    MDBXWrapper(const DBParams& params);
-    ~MDBXWrapper() override;
+    LMDBWrapper(const DBParams& params);
+    ~LMDBWrapper() override;
 
     bool WriteBatch(CDBBatchBase& _batch, bool fSync = false) override;
     size_t DynamicMemoryUsage() const override;
