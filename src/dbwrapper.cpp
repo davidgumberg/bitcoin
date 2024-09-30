@@ -401,8 +401,8 @@ bool CDBWrapper::IsEmpty()
 
 struct LMDBContext {
     unsigned int env_flags = 0;
-    MDB_env* env = nullptr;
-    MDB_dbi* dbi = nullptr;
+    MDB_env *env;
+    MDB_dbi dbi;
 };
 
 struct CDBIterator::IteratorImpl {
@@ -440,14 +440,23 @@ bool CDBIterator::Valid() const { return m_impl_iter->iter->Valid(); }
 void CDBIterator::SeekToFirst() { m_impl_iter->iter->SeekToFirst(); }
 void CDBIterator::Next() { m_impl_iter->iter->Next(); }
 
+/** Handle database error by throwing dbwrapper_error exception.
+ */
+void LMDBWrapper::HandleError(int status)
+{
+    if (status == MDB_SUCCESS)
+        return;
+    const char *errstr = mdb_strerror(status);
+    LogError("LMDB error: %s\n", errstr);
+    throw dbwrapper_error(errstr);
+}
 
 
 LMDBWrapper::LMDBWrapper(const DBParams& params)
     : CDBWrapperBase(params),
     m_db_context{std::make_unique<LMDBContext>()}
 {
-    mdb_env_create(&DBContext().env);
-
+    HandleError(mdb_env_create(&DBContext().env));
     if (params.wipe_data) {
         LogInfo("Wiping LMDB in %s\n", fs::PathToString(params.path));
         DestroyDB(fs::PathToString(params.path));
@@ -458,13 +467,14 @@ LMDBWrapper::LMDBWrapper(const DBParams& params)
     LogPrintf("Opening LMDB in %s\n", fs::PathToString(params.path));
 
 
-    mdb_env_open(DBContext().env, fs::PathToString(params.path).c_str(),
-                 DBContext().env_flags, 0644);
+    HandleError(mdb_env_open(DBContext().env, fs::PathToString(params.path).c_str(),
+                 DBContext().env_flags, 0644));
+    mdb_env_set_mapsize(DBContext().env, 4096 * 16384);
 
     MDB_txn *txn;
-    mdb_txn_begin(DBContext().env, nullptr, 0, &txn);
-    mdb_dbi_open(txn, nullptr, 0, DBContext().dbi);
-    mdb_txn_commit(txn);
+    HandleError(mdb_txn_begin(DBContext().env, nullptr, 0, &txn));
+    HandleError(mdb_dbi_open(txn, nullptr, 0, &DBContext().dbi));
+    HandleError(mdb_txn_commit(txn));
 
 
     if (params.obfuscate && WriteObfuscateKeyIfNotExists()){
@@ -475,19 +485,19 @@ LMDBWrapper::LMDBWrapper(const DBParams& params)
 
 LMDBWrapper::~LMDBWrapper()
 {
+    mdb_dbi_close(DBContext().env, DBContext().dbi);
     mdb_env_close(DBContext().env);
 }
 
 // FIXME
 bool LMDBWrapper::DestroyDB(const std::string& path_str)
 {
-    //
     return true;
 }
 
 void LMDBWrapper::Sync()
 {
-    mdb_env_sync(DBContext().env, 1);
+    HandleError(mdb_env_sync(DBContext().env, 1));
 }
 
 std::optional<std::string> LMDBWrapper::ReadImpl(Span<const std::byte> key) const
@@ -496,8 +506,8 @@ std::optional<std::string> LMDBWrapper::ReadImpl(Span<const std::byte> key) cons
     MDB_val mVal = {};
 
     MDB_txn *txn;
-    mdb_txn_begin(DBContext().env, nullptr, MDB_RDONLY, &txn);
-    int not_found = mdb_get(txn, *DBContext().dbi, &mKey, &mVal);
+    HandleError(mdb_txn_begin(DBContext().env, nullptr, MDB_RDONLY, &txn));
+    int not_found = mdb_get(txn, DBContext().dbi, &mKey, &mVal);
 
     std::optional<std::string> ret;
 
@@ -508,7 +518,7 @@ std::optional<std::string> LMDBWrapper::ReadImpl(Span<const std::byte> key) cons
         ret = std::string(static_cast<char*>(mVal.mv_data), mVal.mv_size);
     }
     else {
-        assert(0);
+        HandleError(not_found);
     }
     mdb_txn_abort(txn);
 
@@ -560,7 +570,7 @@ LMDBBatch::LMDBBatch (const CDBWrapperBase& _parent) : CDBBatchBase(_parent)
     const LMDBWrapper& parent = static_cast<const LMDBWrapper&>(m_parent);
     m_impl_batch = std::make_unique<LMDBWriteBatchImpl>();
 
-    mdb_txn_begin(parent.DBContext().env, nullptr, 0, &m_impl_batch->txn);
+    LMDBWrapper::HandleError(mdb_txn_begin(parent.DBContext().env, nullptr, 0, &m_impl_batch->txn));
 };
 
 LMDBBatch::~LMDBBatch()
@@ -572,11 +582,10 @@ LMDBBatch::~LMDBBatch()
 
 void LMDBBatch::CommitAndReset()
 {
-    mdb_txn_commit(m_impl_batch->txn);
-
     auto &parent = static_cast<const LMDBWrapper&>(m_parent);
 
-    mdb_txn_begin(parent.DBContext().env, nullptr, 0, &m_impl_batch->txn);
+    LMDBWrapper::HandleError(mdb_txn_commit(m_impl_batch->txn));
+    LMDBWrapper::HandleError(mdb_txn_begin(parent.DBContext().env, nullptr, 0, &m_impl_batch->txn));
 }
 
 void LMDBBatch::Clear()
@@ -592,15 +601,36 @@ void LMDBBatch::WriteImpl(Span<const std::byte> key, DataStream& value)
 
     value.Xor(m_parent.GetObfuscateKey());
     MDB_val mVal = {value.size(), value.data()};
-    mdb_put(m_impl_batch->txn, *parent.DBContext().dbi, &mKey, &mVal, 0);
+    int err = 0;
+    do {
+        err = mdb_put(m_impl_batch->txn, parent.DBContext().dbi, &mKey, &mVal, 0);
+        if (err == MDB_MAP_FULL) {
+            LogDebug(BCLog::COINDB, "Map size limit reached: Committing batch early\n");
+            LMDBWrapper::HandleError(mdb_txn_commit(m_impl_batch->txn));
+
+            MDB_envinfo stat;
+            LMDBWrapper::HandleError(mdb_env_info(parent.DBContext().env, &stat));
+            size_t new_size = stat.me_mapsize * 2;
+            LogDebug(BCLog::COINDB, "Map size limit reached: resizing to %d bytes\n", new_size);
+            LMDBWrapper::HandleError(mdb_env_set_mapsize(parent.DBContext().env, new_size));
+            LMDBWrapper::HandleError(mdb_txn_begin(parent.DBContext().env, nullptr, 0, &m_impl_batch->txn));
+        }
+        else if (err) {
+            LogDebug(BCLog::COINDB, "Other error reached while inserting write.\n");
+            LMDBWrapper::HandleError(err);
+        }
+    } while (err);
 }
 
 void LMDBBatch::EraseImpl(Span<const std::byte> key)
 {
     auto &parent = static_cast<const LMDBWrapper&>(m_parent);
-    MDB_val mKey = { key.size_bytes(), const_cast<void*>(static_cast<const void*>(key.data())) };
+    MDB_val mKey = { key.size_bytes(), (void*)key.data() };
 
-    mdb_del(m_impl_batch->txn, *parent.DBContext().dbi, &mKey, nullptr);
+    int err = mdb_del(m_impl_batch->txn, parent.DBContext().dbi, &mKey, nullptr);
+    if(err && err != MDB_NOTFOUND){
+        throw dbwrapper_error("Error erasing entry from lmdb");
+    }
 }
 
 size_t LMDBBatch::SizeEstimate() const
@@ -621,8 +651,8 @@ LMDBIterator::LMDBIterator(const CDBWrapperBase& _parent, const LMDBContext &db_
 {
     m_impl_iter = std::unique_ptr<IteratorImpl>(new IteratorImpl());
 
-    mdb_txn_begin(db_context.env, nullptr, MDB_RDONLY, &m_impl_iter->txn);
-    mdb_cursor_open(m_impl_iter->txn, *db_context.dbi, &m_impl_iter->cursor);
+    LMDBWrapper::HandleError(mdb_txn_begin(db_context.env, nullptr, MDB_RDONLY, &m_impl_iter->txn));
+    LMDBWrapper::HandleError(mdb_cursor_open(m_impl_iter->txn, db_context.dbi, &m_impl_iter->cursor));
 }
 
 LMDBIterator::~LMDBIterator()
@@ -633,18 +663,18 @@ LMDBIterator::~LMDBIterator()
 
 void LMDBIterator::SeekImpl(Span<const std::byte> key)
 {
-    MDB_val mKey = { key.size_bytes(), const_cast<void*>(static_cast<const void*>(key.data())) };
+    MDB_val mKey = { key.size_bytes(), (void*)key.data() };
 
     int err = mdb_cursor_get(m_impl_iter->cursor, &mKey, m_impl_iter->cur_val, MDB_SET);
+    m_impl_iter->cur_key = &mKey;
     if (err == MDB_NOTFOUND) {
         valid = false;
     }
     else if (err == 0) {
         valid = true;
-        m_impl_iter->cur_key = &mKey;
     }
     else {
-        assert(0);
+        LMDBWrapper::HandleError(err);
     }
 }
 
@@ -659,17 +689,22 @@ bool LMDBWrapper::IsEmpty()
     MDB_cursor *cursor;
     MDB_val key, val;
 
-    mdb_txn_begin(DBContext().env, nullptr, MDB_RDONLY, &txn);
-    mdb_cursor_open(txn, *DBContext().dbi, &cursor);
+    HandleError(mdb_txn_begin(DBContext().env, nullptr, MDB_RDONLY, &txn));
+    HandleError(mdb_cursor_open(txn, DBContext().dbi, &cursor));
 
     int err = mdb_cursor_get(cursor, &key, &val, MDB_FIRST);
 
     mdb_cursor_close(cursor);
     mdb_txn_abort(txn);
 
-    if(err == MDB_NOTFOUND) return true;
-    else if (err == 0) return false;
-    else return 0;
+    if(err == MDB_NOTFOUND) {
+        return true;
+    }
+    else if(err) {
+        HandleError(err);
+    }
+
+    return false;
 }
 
 Span<const std::byte> LMDBIterator::GetKeyImpl() const
@@ -691,7 +726,7 @@ void LMDBIterator::SeekToFirst()
     int err = mdb_cursor_get(m_impl_iter->cursor, m_impl_iter->cur_key, m_impl_iter->cur_val, MDB_FIRST);
     if (err == MDB_NOTFOUND) valid = false;
     else if (err == 0) valid = true;
-    else assert(0);
+    else LMDBWrapper::HandleError(err);
 }
 
 void LMDBIterator::Next()
@@ -699,7 +734,7 @@ void LMDBIterator::Next()
     int err = mdb_cursor_get(m_impl_iter->cursor, m_impl_iter->cur_key, m_impl_iter->cur_val, MDB_NEXT);
     if (err == MDB_NOTFOUND) valid = false;
     else if (err == 0) valid = true;
-    else assert(0);
+    else LMDBWrapper::HandleError(err);
 }
 
 const std::vector<unsigned char>& CDBWrapperBase::GetObfuscateKey() const

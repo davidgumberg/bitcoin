@@ -446,6 +446,7 @@ public:
     bool IsEmpty() override;
 
     bool DestroyDB(const std::string& path_str);
+    static void HandleError(int status);
 };
 
 #endif // BITCOIN_DBWRAPPER_H
