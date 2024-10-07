@@ -466,7 +466,7 @@ MDBXWrapper::MDBXWrapper(const DBParams& params)
 
     LogPrintf("Opening MDBX in %s\n", fs::PathToString(params.path));
 
-    DBContext().create_params.geometry.pagesize = 16384;
+    DBContext().create_params.geometry.pagesize = 4096;
     DBContext().operate_params.durability = mdbx::env::whole_fragile;
     // initialize the mdbx environment.
     DBContext().env = mdbx::env_managed(params.path, DBContext().create_params, DBContext().operate_params);
