@@ -566,23 +566,33 @@ size_t MDBXWrapper::DynamicMemoryUsage() const
 
 struct MDBXBatch::MDBXWriteBatchImpl {
     const MDBXWrapper &parent;
+    std::unique_ptr<mdbx::cursor_managed> cursor;
+
+    MDBXWriteBatchImpl(const MDBXWrapper &parent, mdbx::cursor_managed &&cur)
+        : parent(parent),
+        cursor(std::make_unique<mdbx::cursor_managed>(std::move(cur)))
+    {}
+
 };
 
 MDBXBatch::MDBXBatch (const CDBWrapperBase& _parent) : CDBBatchBase(_parent)
 {
     const MDBXWrapper& parent = static_cast<const MDBXWrapper&>(m_parent);
     assert(parent.happy);
-    m_impl_batch = std::make_unique<MDBXWriteBatchImpl>(parent);
-
+    m_impl_batch = std::make_unique<MDBXWriteBatchImpl>(parent, parent.DBContext().txn.open_cursor(parent.DBContext().map));
 };
 
-MDBXBatch::~MDBXBatch() = default;
+MDBXBatch::~MDBXBatch()
+{
+    m_impl_batch->cursor->close();
+}
 
 void MDBXBatch::CommitAndReset()
 {
     assert(m_impl_batch->parent.happy);
     m_impl_batch->parent.DBContext().txn.commit();
     m_impl_batch->parent.DBContext().txn = m_impl_batch->parent.DBContext().env.start_write();
+    m_impl_batch->cursor = std::make_unique<mdbx::cursor_managed>(m_impl_batch->parent.DBContext().txn.open_cursor(m_impl_batch->parent.DBContext().map));
 }
 
 void MDBXBatch::Clear()
@@ -595,11 +605,12 @@ void MDBXBatch::WriteImpl(Span<const std::byte> key, DataStream& value)
 {
     assert(m_impl_batch->parent.happy);
     mdbx::slice slKey(CharCast(key.data()), key.size());
+
     value.Xor(m_parent.GetObfuscateKey());
     mdbx::slice slValue(CharCast(value.data()), value.size());
 
     try {
-        m_impl_batch->parent.DBContext().txn.put(m_impl_batch->parent.DBContext().map, slKey, slValue, mdbx::put_mode::upsert);
+        m_impl_batch->cursor->upsert(slKey, slValue);
     }
     catch (mdbx::error err) { const std::string errmsg = "Fatal MDBX error: " + err.message();
         std::cout << errmsg << std::endl;
@@ -611,7 +622,7 @@ void MDBXBatch::EraseImpl(Span<const std::byte> key)
 {
     assert(m_impl_batch->parent.happy);
     mdbx::slice slKey(CharCast(key.data()), key.size());
-    m_impl_batch->parent.DBContext().txn.erase(m_impl_batch->parent.DBContext().map, slKey);
+    m_impl_batch->cursor->erase(slKey);
 }
 
 size_t MDBXBatch::SizeEstimate() const
