@@ -173,7 +173,7 @@ CDBBatch::CDBBatch(const CDBWrapperBase& _parent)
 
 CDBBatch::~CDBBatch() = default;
 
-void CDBBatch::WriteImpl(Span<const std::byte> key, DataStream& value)
+void CDBBatch::WriteImpl(Span<const std::byte> key, DataStream& value, bool possible_dup)
 {
     leveldb::Slice slKey(CharCast(key.data()), key.size());
     value.Xor(m_parent.GetObfuscateKey());
@@ -430,10 +430,10 @@ MDBXWrapper::MDBXWrapper(const DBParams& params)
     LogPrintf("Opening MDBX in %s\n", fs::PathToString(params.path));
 
     DBContext().create_params.geometry.pagesize = 4096;
-
     // We need this because of some unpleasant (for us) passing around of the
     // Chainstate between threads during initialization.
     DBContext().operate_params.options.no_sticky_threads = true;
+
     DBContext().operate_params.durability = mdbx::env::whole_fragile;
 
     // initialize the mdbx environment.
@@ -462,7 +462,6 @@ std::optional<std::string> MDBXWrapper::ReadImpl(Span<const std::byte> key) cons
 
     auto read_txn = DBContext().env.start_read();
     slValue = read_txn.get(DBContext().map, slKey, mdbx::slice::invalid());
-    read_txn.commit();
 
     std::optional<std::string> ret;
 
@@ -472,6 +471,8 @@ std::optional<std::string> MDBXWrapper::ReadImpl(Span<const std::byte> key) cons
     else {
         ret = std::string(slValue.as_string());
     }
+
+    read_txn.commit();
     return ret;
 }
 
@@ -480,11 +481,12 @@ bool MDBXWrapper::ExistsImpl(Span<const std::byte> key) const {
 
     auto read_txn = DBContext().env.start_read();
     slValue = read_txn.get(DBContext().map, slKey, mdbx::slice::invalid());
-    read_txn.commit();
 
     if(slValue == mdbx::slice::invalid()) {
         return false;
     }
+
+    read_txn.commit();
     return true;
 }
 
@@ -519,6 +521,7 @@ size_t MDBXWrapper::DynamicMemoryUsage() const
 
 struct MDBXBatch::MDBXWriteBatchImpl {
     mdbx::txn_managed txn;
+    mdbx::cursor_managed cur;
 };
 
 MDBXBatch::MDBXBatch (const CDBWrapperBase& _parent) : CDBBatchBase(_parent)
@@ -527,6 +530,7 @@ MDBXBatch::MDBXBatch (const CDBWrapperBase& _parent) : CDBBatchBase(_parent)
     m_impl_batch = std::make_unique<MDBXWriteBatchImpl>();
 
     m_impl_batch->txn = parent.DBContext().env.start_write();
+    m_impl_batch->cur = m_impl_batch->txn.open_cursor(parent.DBContext().map);
 };
 
 MDBXBatch::~MDBXBatch()
@@ -538,36 +542,62 @@ MDBXBatch::~MDBXBatch()
 
 void MDBXBatch::CommitAndReset()
 {
+    auto &parent = static_cast<const MDBXWrapper&>(m_parent);
+
+    auto tx_stat = m_impl_batch->txn.get_info(true);
+    LogDebug(BCLog::COINDB, "Pre-Commit tx stats:\n");
+    LogDebug(BCLog::COINDB, "  dirtied pages: %d, retired pages: %d, read lag: %d\n",
+        tx_stat.txn_space_dirty / 4096, tx_stat.txn_space_retired / 4096, tx_stat.txn_reader_lag);
+
+    auto map_stat = m_impl_batch->txn.get_map_stat(parent.DBContext().map);
+    LogDebug(BCLog::COINDB, "Map stats:\n");
+    LogDebug(BCLog::COINDB, "  depth: %d, leaves: %d, overpages: %d\n",
+        map_stat.ms_depth, map_stat.ms_leaf_pages, map_stat.ms_overflow_pages);
+
+    auto env_stat = parent.DBContext().env.get_info(m_impl_batch->txn);
+    LogDebug(BCLog::COINDB, "Env stats:\n");
+    LogDebug(BCLog::COINDB, "  mapsize: %d, unsynced_bytes: %d\n",
+        env_stat.mi_mapsize, env_stat.mi_unsync_volume);
+
+    auto pageop_stat = env_stat.mi_pgop_stat;
+    LogDebug(BCLog::COINDB, "Pageop stats:");
+    LogDebug(BCLog::COINDB, "  CoW'ed pgs: %d, Merged pgs: %d, New pgs: %d, Spill pgs: %d, Split pgs: %d\n",
+        pageop_stat.cow, pageop_stat.merge, pageop_stat.newly, pageop_stat.spill, pageop_stat.split);
+
+    // Committing tx also releases all cursors.
     m_impl_batch->txn.commit();
 
-    auto &parent = static_cast<const MDBXWrapper&>(m_parent);
     m_impl_batch->txn = parent.DBContext().env.start_write();
+    m_impl_batch->cur = m_impl_batch->txn.open_cursor(parent.DBContext().map);
 }
 
-void MDBXBatch::WriteImpl(Span<const std::byte> key, DataStream& value)
+void MDBXBatch::WriteImpl(Span<const std::byte> key, DataStream& value, bool possible_dup)
 {
-    auto &parent = static_cast<const MDBXWrapper&>(m_parent);
-
     mdbx::slice slKey(CharCast(key.data()), key.size());
     value.Xor(m_parent.GetObfuscateKey());
     mdbx::slice slValue(CharCast(value.data()), value.size());
 
     try {
-        m_impl_batch->txn.put(parent.m_db_context->map, slKey, slValue, mdbx::put_mode::upsert);
+        if (!possible_dup) {
+            m_impl_batch->cur.put(slKey, slValue, mdbx::insert_unique);
+        }
+        else {
+            m_impl_batch->cur.put(slKey, slValue, mdbx::upsert);
+        }
+
     }
     catch (mdbx::error err) {
         const std::string errmsg = "Fatal MDBX error: " + err.message();
         std::cout << errmsg << std::endl;
+        std::cout << "K: " << slKey.string_view() << "V: " << slValue;
         throw dbwrapper_error(errmsg);
     }
 }
 
 void MDBXBatch::EraseImpl(Span<const std::byte> key)
 {
-    auto &parent = static_cast<const MDBXWrapper&>(m_parent);
-
     mdbx::slice slKey(CharCast(key.data()), key.size());
-    m_impl_batch->txn.erase(parent.m_db_context->map, slKey);
+    m_impl_batch->cur.erase(slKey);
 }
 
 size_t MDBXBatch::SizeEstimate() const
