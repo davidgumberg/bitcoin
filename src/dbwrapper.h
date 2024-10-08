@@ -63,7 +63,7 @@ protected:
     DataStream ssKey{};
     DataStream ssValue{};
 
-    virtual void WriteImpl(Span<const std::byte> key, DataStream& ssVal) = 0;
+    virtual void WriteImpl(Span<const std::byte> key, DataStream& value, bool possible_dup) = 0;
     virtual void EraseImpl(Span<const std::byte> key) = 0;
 
 public:
@@ -77,13 +77,13 @@ public:
     virtual size_t SizeEstimate() const  = 0;
 
     template <typename K, typename V>
-    void Write(const K& key, const V& value)
+    void Write(const K& key, const V& value, bool possible_dup = true)
     {
         ssKey.reserve(DBWRAPPER_PREALLOC_KEY_SIZE);
         ssValue.reserve(DBWRAPPER_PREALLOC_VALUE_SIZE);
         ssKey << key;
         ssValue << value;
-        WriteImpl(ssKey, ssValue);
+        WriteImpl(ssKey, ssValue, possible_dup);
         ssKey.clear();
         ssValue.clear();
     }
@@ -112,7 +112,7 @@ private:
 
     size_t size_estimate{0};
 
-    void WriteImpl(Span<const std::byte> key, DataStream& ssVal) override;
+    void WriteImpl(Span<const std::byte> key, DataStream& ssVal, bool possible_dup) override;
     void EraseImpl(Span<const std::byte> key) override;
 
 public:
@@ -360,7 +360,7 @@ private:
     struct MDBXWriteBatchImpl;
     std::unique_ptr<MDBXWriteBatchImpl> m_impl_batch;
 
-    void WriteImpl(Span<const std::byte> key, DataStream& value) override;
+    void WriteImpl(Span<const std::byte> key, DataStream& value, bool possible_dup) override;
     void EraseImpl(Span<const std::byte> key) override;
 
 public:
