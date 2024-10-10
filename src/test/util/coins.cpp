@@ -16,12 +16,19 @@
 
 COutPoint AddTestCoin(FastRandomContext& rng, CCoinsViewCache& coins_view)
 {
-    Coin new_coin;
-    COutPoint outpoint{Txid::FromUint256(rng.rand256()), /*nIn=*/0};
-    new_coin.nHeight = rng.rand32();
-    new_coin.out.nValue = RandMoney(rng);
-    new_coin.out.scriptPubKey = RandScript(rng, 56);
-    coins_view.AddCoin(outpoint, std::move(new_coin), /*possible_overwrite=*/false);
+    auto [outpoint, coin] = RandUTXO(rng, /*spk_len=*/56);
+    coins_view.AddCoin(outpoint, std::move(coin), /*possible_overwrite=*/false);
 
     return outpoint;
-};
+}
+
+std::pair<COutPoint, Coin> RandUTXO(FastRandomContext& rng, size_t spk_len)
+{
+    Coin coin;
+    COutPoint outpoint{Txid::FromUint256(rng.rand256()), /*nIn=*/0};
+    coin.nHeight = rng.rand32();
+    coin.out.nValue = RandMoney(rng);
+    coin.out.scriptPubKey = RandScript(rng, spk_len);
+
+    return {outpoint, coin};
+}

@@ -5,6 +5,7 @@
 #ifndef BITCOIN_TEST_UTIL_COINS_H
 #define BITCOIN_TEST_UTIL_COINS_H
 
+#include <coins.h>
 #include <primitives/transaction.h>
 
 class CCoinsViewCache;
@@ -16,5 +17,8 @@ class FastRandomContext;
  * @returns the COutPoint of the created coin.
  */
 COutPoint AddTestCoin(FastRandomContext& rng, CCoinsViewCache& coins_view);
+
+/* Create a random UTXO, with a script pub key */
+std::pair<COutPoint, Coin> RandUTXO(FastRandomContext& rng, size_t spk_len);
 
 #endif // BITCOIN_TEST_UTIL_COINS_H
