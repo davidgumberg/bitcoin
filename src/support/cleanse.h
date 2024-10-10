@@ -12,4 +12,8 @@
  * operation will not be optimized out by the compiler. */
 void memory_cleanse(void *ptr, size_t len);
 
+/** Test version of memory_cleanse that demonstrates performance characteristics of
+ * preventing optimization without the memset call. */
+void memory_cleanse2(void *ptr, size_t len);
+
 #endif // BITCOIN_SUPPORT_CLEANSE_H

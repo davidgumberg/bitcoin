@@ -33,3 +33,13 @@ void memory_cleanse(void *ptr, size_t len)
     __asm__ __volatile__("" : : "r"(ptr) : "memory");
 #endif
 }
+
+void memory_cleanse2(void *ptr, size_t len)
+{
+
+    // std::memset(ptr, 0, len);
+
+    // Same optimization prevention used above without actually setting
+    // memory to zero
+    __asm__ __volatile__("" : : "r"(ptr) : "memory");
+}

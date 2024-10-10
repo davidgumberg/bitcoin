@@ -29,7 +29,7 @@ struct zero_after_free_allocator {
     void deallocate(T* p, std::size_t n)
     {
         if (p != nullptr)
-            memory_cleanse(p, sizeof(T) * n);
+            memory_cleanse2(p, sizeof(T) * n);
         std::allocator<T>{}.deallocate(p, n);
     }
 
