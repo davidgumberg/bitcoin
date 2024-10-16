@@ -422,6 +422,8 @@ private:
 
     void Sync();
 
+    uint16_t m_partition_index;
+
 public:
     MDBXWrapper(const DBParams& params);
     ~MDBXWrapper() override;
