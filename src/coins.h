@@ -60,7 +60,7 @@ public:
 
     template<typename Stream>
     void Serialize(Stream &s) const {
-        assert(!IsSpent());
+        // assert(!IsSpent());  // This is possible now with the new erase mechanism.
         uint32_t code = nHeight * uint32_t{2} + fCoinBase;
         ::Serialize(s, VARINT(code));
         ::Serialize(s, Using<TxOutCompression>(out));
@@ -223,6 +223,8 @@ using CCoinsMap = std::unordered_map<COutPoint,
                                                    sizeof(CoinsCachePair) + sizeof(void*) * 4>>;
 
 using CCoinsMapMemoryResource = CCoinsMap::allocator_type::ResourceType;
+
+using CCoinsMapOrdered = std::map<COutPoint, CCoinsCacheEntry>;
 
 /** Cursor for iterating over CoinsView state */
 class CCoinsViewCursor

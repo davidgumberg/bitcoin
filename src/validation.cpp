@@ -1969,7 +1969,7 @@ void Chainstate::InitCoinsDB(
             .cache_bytes = cache_size_bytes,
             .memory_only = in_memory,
             .wipe_data = should_wipe,
-            .obfuscate = true,
+            .obfuscate = false, // FIXME: Could be a *huge* issue, xor and PBT incompatible?
             .options = m_chainman.m_options.coins_db},
         m_chainman.m_options.coins_view);
 }

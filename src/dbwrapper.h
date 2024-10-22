@@ -52,50 +52,74 @@ public:
     explicit dbwrapper_error(const std::string& msg) : std::runtime_error(msg) {}
 };
 
+template <typename K>
+struct DBPartitionedEntry {
+    const uint16_t m_partition;
+    K m_key;
+
+    explicit DBPartitionedEntry(uint16_t partition, K key) : m_partition(partition), m_key(key) {}
+    SERIALIZE_METHODS(DBPartitionedEntry, obj) { READWRITE(obj.m_partition, obj.m_key); }
+};
+
+static constexpr uint8_t DB_METADATA{0};
+static constexpr std::byte DB_PARTITION_KEY{'P'};
+
+struct DBWrapperMetaEntry {
+    uint8_t m_prefix;
+    const std::span<const std::byte> m_key;
+
+    explicit DBWrapperMetaEntry(const std::span<const std::byte> key) : m_prefix(DB_METADATA), m_key(key)  {}
+    explicit DBWrapperMetaEntry(const std::byte &key) : m_prefix(DB_METADATA), m_key({&key, 1})  {}
+
+    SERIALIZE_METHODS(DBWrapperMetaEntry, obj) { READWRITE(obj.m_prefix, obj.m_key); }
+};
+
 class CDBWrapperBase;
 
 /** Batch of changes queued to be written to a CDBWrapper */
 class CDBBatchBase
 {
 protected:
-    const CDBWrapperBase &m_parent;
+    CDBWrapperBase &m_parent;
 
     DataStream ssKey{};
     DataStream ssValue{};
 
-    virtual void WriteImpl(Span<const std::byte> key, DataStream& value, bool possible_dup) = 0;
-    virtual void EraseImpl(Span<const std::byte> key) = 0;
+    virtual void WriteImpl(Span<const std::byte> key, DataStream& value, bool sorted) = 0;
+    virtual void EraseImpl(Span<const std::byte> key, bool sorted) = 0;
 
 public:
     /**
      * @param[in] _parent   CDBWrapper that this batch is to be submitted to
      */
-    explicit CDBBatchBase(const CDBWrapperBase& _parent) : m_parent{_parent} {}
+    explicit CDBBatchBase(CDBWrapperBase& _parent) : m_parent{_parent} {}
     virtual ~CDBBatchBase() = default;
     // virtual void Clear() = 0;
 
-    virtual size_t SizeEstimate() const  = 0;
+    virtual size_t SizeEstimate() const = 0;
+    uint16_t CurrentPartition() const;
 
     template <typename K, typename V>
-    void Write(const K& key, const V& value, bool possible_dup = true)
+    void Write(const K& key, const V& value, bool sorted = false)
     {
         ssKey.reserve(DBWRAPPER_PREALLOC_KEY_SIZE);
         ssValue.reserve(DBWRAPPER_PREALLOC_VALUE_SIZE);
         ssKey << key;
         ssValue << value;
-        WriteImpl(ssKey, ssValue, possible_dup);
+        WriteImpl(ssKey, ssValue, sorted);
         ssKey.clear();
         ssValue.clear();
     }
 
     template <typename K>
-    void Erase(const K& key)
+    void Erase(const K& key, bool sorted = false)
     {
         ssKey.reserve(DBWRAPPER_PREALLOC_KEY_SIZE);
         ssKey << key;
-        EraseImpl(ssKey);
+        EraseImpl(ssKey, sorted);
         ssKey.clear();
     }
+
 };
 
 class CDBWrapper;
@@ -112,14 +136,14 @@ private:
 
     size_t size_estimate{0};
 
-    void WriteImpl(Span<const std::byte> key, DataStream& ssVal, bool possible_dup) override;
-    void EraseImpl(Span<const std::byte> key) override;
+    void WriteImpl(Span<const std::byte> key, DataStream& ssVal, bool sorted) override;
+    void EraseImpl(Span<const std::byte> key, bool sorted) override;
 
 public:
     /**
      * @param[in] _parent   CDBWrapper that this batch is to be submitted to
      */
-    explicit CDBBatch(const CDBWrapperBase& _parent);
+    explicit CDBBatch(CDBWrapperBase& _parent);
     ~CDBBatch() override;
     // void Clear() override;
 
@@ -221,11 +245,11 @@ protected:
     //! whether or not the database resides in memory
     bool m_is_memory;
 
-    virtual std::optional<std::string> ReadImpl(Span<const std::byte> key) const = 0;
-    virtual bool ExistsImpl(Span<const std::byte> key) const = 0;
+    virtual std::optional<std::string> ReadImpl(Span<const std::byte> key, bool partitioned) const = 0;
+    virtual bool ExistsImpl(Span<const std::byte> key, bool partitioned) const = 0;
     virtual size_t EstimateSizeImpl(Span<const std::byte> key1, Span<const std::byte> key2) const = 0;
 
-    virtual std::unique_ptr<CDBBatchBase> CreateBatch() const = 0;
+    virtual std::unique_ptr<CDBBatchBase> CreateBatch() = 0;
 
 public:
     CDBWrapperBase(const CDBWrapperBase&) = delete;
@@ -234,14 +258,15 @@ public:
     virtual ~CDBWrapperBase() = default;
 
     const std::vector<unsigned char>& GetObfuscateKey() const;
+    uint16_t partition_index{0};
 
     template <typename K, typename V>
-    bool Read(const K& key, V& value) const
+    bool Read(const K& key, V& value, bool partitioned = false) const
     {
         DataStream ssKey{};
         ssKey.reserve(DBWRAPPER_PREALLOC_KEY_SIZE);
         ssKey << key;
-        std::optional<std::string> strValue{ReadImpl(ssKey)};
+        std::optional<std::string> strValue{ReadImpl(ssKey, partitioned)};
         if (!strValue) {
             return false;
         }
@@ -256,10 +281,10 @@ public:
     }
 
     template <typename K, typename V>
-    bool Write(const K& key, const V& value, bool fSync = false)
+    bool Write(const K& key, const V& value, bool fSync = false, bool sorted = false)
     {
         auto batch = CreateBatch();
-        batch->Write(key, value);
+        batch->Write(key, value, sorted);
         return WriteBatch(*batch, fSync);
     }
 
@@ -272,12 +297,12 @@ public:
     }
 
     template <typename K>
-    bool Exists(const K& key) const
+    bool Exists(const K& key, bool partitioned = false) const
     {
         DataStream ssKey{};
         ssKey.reserve(DBWRAPPER_PREALLOC_KEY_SIZE);
         ssKey << key;
-        return ExistsImpl(ssKey);
+        return ExistsImpl(ssKey, partitioned);
     }
 
     template <typename K>
@@ -321,11 +346,11 @@ private:
     std::unique_ptr<LevelDBContext> m_db_context;
     auto& DBContext() const LIFETIMEBOUND { return *Assert(m_db_context); }
 
-    std::optional<std::string> ReadImpl(Span<const std::byte> key) const override;
-    bool ExistsImpl(Span<const std::byte> key) const override;
+    std::optional<std::string> ReadImpl(Span<const std::byte> key, bool partitioned) const override;
+    bool ExistsImpl(Span<const std::byte> key, bool partitioned) const override;
     size_t EstimateSizeImpl(Span<const std::byte> key1, Span<const std::byte> key2) const override;
 
-    inline std::unique_ptr<CDBBatchBase> CreateBatch() const override {
+    inline std::unique_ptr<CDBBatchBase> CreateBatch() override {
         return std::make_unique<CDBBatch>(*this);
     }
 
@@ -359,15 +384,16 @@ class MDBXBatch : public CDBBatchBase
 private:
     struct MDBXWriteBatchImpl;
     std::unique_ptr<MDBXWriteBatchImpl> m_impl_batch;
+    bool fPartitionUsed{false};
 
-    void WriteImpl(Span<const std::byte> key, DataStream& value, bool possible_dup) override;
-    void EraseImpl(Span<const std::byte> key) override;
+    void WriteImpl(Span<const std::byte> key, DataStream& value, bool sorted) override;
+    void EraseImpl(Span<const std::byte> key, bool sorted) override;
 
 public:
     /**
      * @param[in] _parent   CDBWrapper that this batch is to be submitted to
      */
-    explicit MDBXBatch(const CDBWrapperBase& _parent);
+    explicit MDBXBatch(CDBWrapperBase& _parent);
     ~MDBXBatch();
     // void Clear() override;
     void CommitAndReset();
@@ -412,15 +438,18 @@ private:
     std::unique_ptr<MDBXContext> m_db_context;
     auto& DBContext() const LIFETIMEBOUND { return *Assert(m_db_context); }
 
-    std::optional<std::string> ReadImpl(Span<const std::byte> key) const override;
-    bool ExistsImpl(Span<const std::byte> key) const override;
+    std::optional<std::string> ReadImpl(Span<const std::byte> key, bool partitioned) const override;
+    bool ExistsImpl(Span<const std::byte> key, bool partitioned) const override;
     size_t EstimateSizeImpl(Span<const std::byte> key1, Span<const std::byte> key2) const override;
 
-    inline std::unique_ptr<CDBBatchBase> CreateBatch() const override {
+    inline std::unique_ptr<CDBBatchBase> CreateBatch() override {
         return std::make_unique<MDBXBatch>(*this);
     }
 
     void Sync();
+    void WritePartitionPrefix(uint16_t idx);
+    void PartitionInc();
+    bool WritePartitionPrefixIfNotExists();
 
 public:
     MDBXWrapper(const DBParams& params);

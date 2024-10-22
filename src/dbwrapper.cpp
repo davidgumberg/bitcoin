@@ -167,7 +167,7 @@ struct CDBBatch::WriteBatchImpl {
     leveldb::WriteBatch batch;
 };
 
-CDBBatch::CDBBatch(const CDBWrapperBase& _parent)
+CDBBatch::CDBBatch(CDBWrapperBase& _parent)
     : CDBBatchBase(_parent),
       m_impl_batch{std::make_unique<CDBBatch::WriteBatchImpl>()} {};
 
@@ -189,7 +189,7 @@ void CDBBatch::WriteImpl(Span<const std::byte> key, DataStream& value, bool poss
     size_estimate += 3 + (slKey.size() > 127) + slKey.size() + (slValue.size() > 127) + slValue.size();
 }
 
-void CDBBatch::EraseImpl(Span<const std::byte> key)
+void CDBBatch::EraseImpl(Span<const std::byte> key, bool sorted)
 {
     leveldb::Slice slKey(CharCast(key.data()), key.size());
     m_impl_batch->batch.Delete(slKey);
@@ -341,7 +341,7 @@ bool CDBWrapperBase::WriteObfuscateKeyIfNotExists()
         std::vector<unsigned char> new_key = CreateObfuscateKey();
 
         // Write `new_key` so we don't obfuscate the key with itself
-        Write(OBFUSCATE_KEY_KEY, new_key);
+        Write(OBFUSCATE_KEY_KEY, new_key,/*fSync=*/false,/*sorted=*/false);
         obfuscate_key = new_key;
         return true;
     }
@@ -351,7 +351,7 @@ bool CDBWrapperBase::WriteObfuscateKeyIfNotExists()
 }
 
 
-std::optional<std::string> CDBWrapper::ReadImpl(Span<const std::byte> key) const
+std::optional<std::string> CDBWrapper::ReadImpl(Span<const std::byte> key, bool partitioned) const
 {
     leveldb::Slice slKey(CharCast(key.data()), key.size());
     std::string strValue;
@@ -365,7 +365,7 @@ std::optional<std::string> CDBWrapper::ReadImpl(Span<const std::byte> key) const
     return strValue;
 }
 
-bool CDBWrapper::ExistsImpl(Span<const std::byte> key) const
+bool CDBWrapper::ExistsImpl(Span<const std::byte> key, bool partitioned) const
 {
     leveldb::Slice slKey(CharCast(key.data()), key.size());
 
@@ -447,7 +447,10 @@ MDBXWrapper::MDBXWrapper(const DBParams& params)
         LogInfo("Wrote new obfuscate key for %s: %s\n", fs::PathToString(params.path), HexStr(obfuscate_key));
     }
     LogInfo("Using obfuscation key for %s: %s\n", fs::PathToString(params.path), HexStr(GetObfuscateKey()));
+
+    WritePartitionPrefixIfNotExists();
 }
+
 
 MDBXWrapper::~MDBXWrapper() = default;
 
@@ -456,38 +459,101 @@ void MDBXWrapper::Sync()
     DBContext().env.sync_to_disk();
 }
 
-std::optional<std::string> MDBXWrapper::ReadImpl(Span<const std::byte> key) const
+void MDBXWrapper::WritePartitionPrefix(uint16_t idx)
 {
-    mdbx::slice slKey(CharCast(key.data()), key.size()), slValue;
+    Write(DBWrapperMetaEntry{DB_PARTITION_KEY}, idx, /*fSync=*/false, /*sorted=*/false);
+}
 
+void MDBXWrapper::PartitionInc()
+{
+    partition_index++;
+    LogInfo("Incrementing partition key to: %d", partition_index);
+    WritePartitionPrefix(partition_index);
+}
+
+bool MDBXWrapper::WritePartitionPrefixIfNotExists()
+{
+    uint16_t partition_prefix_value(sizeof(partition_index));
+    auto partition_key = DBWrapperMetaEntry{DB_PARTITION_KEY};
+
+    bool key_exists = Read(partition_key, partition_prefix_value, /*partitioned=*/false);
+
+    if (!key_exists) {
+        partition_prefix_value = uint16_t{0x0001};
+
+        // Write `new_key` so we don't obfuscate the key with itself
+        LogInfo("Writing new partition key %02x", partition_prefix_value);
+        WritePartitionPrefix(partition_prefix_value);
+        partition_index = partition_prefix_value;
+        return true;
+    }
+    else {
+        LogInfo("Using existing partition key %02x", partition_prefix_value);
+        partition_index = partition_prefix_value;
+        return false;
+    }
+}
+
+static std::string bytesToHexString(Span<const std::byte> bytes) {
+    std::stringstream ss;
+    ss << std::hex << std::setfill('0');
+
+    for (const auto& byte : bytes) {
+        ss << std::setw(2) << static_cast<int>(byte);
+    }
+
+    return ss.str();
+}
+
+static constexpr mdbx::slice TX_ERASE_VAL("\x00");
+
+std::optional<std::string> MDBXWrapper::ReadImpl(Span<const std::byte> key, bool partitioned) const
+{
     auto read_txn = DBContext().env.start_read();
-    slValue = read_txn.get(DBContext().map, slKey, mdbx::slice::invalid());
+    mdbx::slice slValue = mdbx::slice::invalid();
+
+    if(partitioned) {
+        LogDebug(BCLog::COINDB, "Reading for key 0x%02x", bytesToHexString(key));
+        uint16_t cur_part = partition_index - 1;
+        // Ugly.. 0x0000 is reserved for metadata
+        while (cur_part > DB_METADATA && slValue == mdbx::slice::invalid()) {
+            DataStream partitioned_key;
+            ::Serialize(partitioned_key, DBPartitionedEntry{cur_part, key}); // FIXME: Extra copying to avoid CDBatchBase refactor
+            mdbx::slice slKey(CharCast(partitioned_key.data()), partitioned_key.size());
+            LogDebug(BCLog::COINDB, "Looking with pp 0x%02x", slKey.as_hex_string());
+
+            // Get the next tx
+            slValue = read_txn.get(DBContext().map, slKey, mdbx::slice::invalid());
+
+            if (slValue == TX_ERASE_VAL){
+                break;
+            }
+            // Search an earlier partition
+            cur_part--;
+        }
+    }
+    else {
+        mdbx::slice slKey(CharCast(key.data()), key.size());
+        slValue = read_txn.get(DBContext().map, slKey, mdbx::slice::invalid());
+    }
 
     std::optional<std::string> ret;
 
-    if(slValue == mdbx::slice::invalid()) {
+    if(slValue == mdbx::slice::invalid() || slValue == TX_ERASE_VAL) {
         ret = std::nullopt;
+        LogDebug(BCLog::COINDB, "Found nothing!");
     }
     else {
         ret = std::string(slValue.as_string());
+        LogDebug(BCLog::COINDB, "Found something!");
     }
 
     read_txn.commit();
     return ret;
 }
 
-bool MDBXWrapper::ExistsImpl(Span<const std::byte> key) const {
-    mdbx::slice slKey(CharCast(key.data()), key.size()), slValue;
-
-    auto read_txn = DBContext().env.start_read();
-    slValue = read_txn.get(DBContext().map, slKey, mdbx::slice::invalid());
-
-    if(slValue == mdbx::slice::invalid()) {
-        return false;
-    }
-
-    read_txn.commit();
-    return true;
+bool MDBXWrapper::ExistsImpl(Span<const std::byte> key, bool partitioned) const {
+    return (ReadImpl(key, partitioned).has_value() ? true : false);
 }
 
 size_t MDBXWrapper::EstimateSizeImpl(Span<const std::byte> key1, Span<const std::byte> key2) const
@@ -520,41 +586,44 @@ size_t MDBXWrapper::DynamicMemoryUsage() const
 }
 
 struct MDBXBatch::MDBXWriteBatchImpl {
-    mdbx::txn_managed txn;
-    mdbx::cursor_managed cur;
+    mdbx::map_handle &m_map;
+    mdbx::txn_managed m_txn;
+
+    explicit MDBXWriteBatchImpl(mdbx::map_handle &map, mdbx::txn_managed &&txn)
+        : m_map{map}, m_txn{std::move(txn)} {}
 };
 
-MDBXBatch::MDBXBatch (const CDBWrapperBase& _parent) : CDBBatchBase(_parent)
+MDBXBatch::MDBXBatch (CDBWrapperBase& _parent) : CDBBatchBase(_parent)
 {
-    const MDBXWrapper& parent = static_cast<const MDBXWrapper&>(m_parent);
-    m_impl_batch = std::make_unique<MDBXWriteBatchImpl>();
+    MDBXWrapper& parent = static_cast<MDBXWrapper&>(m_parent);
+    m_impl_batch = std::make_unique<MDBXWriteBatchImpl>(parent.DBContext().map,
+        parent.DBContext().env.start_write());
 
-    m_impl_batch->txn = parent.DBContext().env.start_write();
-    m_impl_batch->cur = m_impl_batch->txn.open_cursor(parent.DBContext().map);
 };
 
 MDBXBatch::~MDBXBatch()
 {
-    if(m_impl_batch->txn){
-        m_impl_batch->txn.abort();
+    if(m_impl_batch->m_txn){
+        m_impl_batch->m_txn.abort();
     }
 }
 
 void MDBXBatch::CommitAndReset()
 {
-    auto &parent = static_cast<const MDBXWrapper&>(m_parent);
+    auto &parent = static_cast<MDBXWrapper&>(m_parent);
 
-    auto tx_stat = m_impl_batch->txn.get_info(true);
+/*
+    auto tx_stat = m_impl_batch->m_txn.get_info(true);
     LogDebug(BCLog::COINDB, "Pre-Commit tx stats:\n");
     LogDebug(BCLog::COINDB, "  dirtied pages: %d, retired pages: %d, read lag: %d\n",
         tx_stat.txn_space_dirty / 4096, tx_stat.txn_space_retired / 4096, tx_stat.txn_reader_lag);
 
-    auto map_stat = m_impl_batch->txn.get_map_stat(parent.DBContext().map);
+    auto map_stat = m_impl_batch->m_txn.get_map_stat(parent.DBContext().map);
     LogDebug(BCLog::COINDB, "Map stats:\n");
     LogDebug(BCLog::COINDB, "  depth: %d, leaves: %d, overpages: %d\n",
         map_stat.ms_depth, map_stat.ms_leaf_pages, map_stat.ms_overflow_pages);
 
-    auto env_stat = parent.DBContext().env.get_info(m_impl_batch->txn);
+    auto env_stat = parent.DBContext().env.get_info(m_impl_batch->m_txn);
     LogDebug(BCLog::COINDB, "Env stats:\n");
     LogDebug(BCLog::COINDB, "  mapsize: %d, unsynced_bytes: %d\n",
         env_stat.mi_mapsize, env_stat.mi_unsync_volume);
@@ -563,46 +632,63 @@ void MDBXBatch::CommitAndReset()
     LogDebug(BCLog::COINDB, "Pageop stats:");
     LogDebug(BCLog::COINDB, "  CoW'ed pgs: %d, Merged pgs: %d, New pgs: %d, Spill pgs: %d, Split pgs: %d\n",
         pageop_stat.cow, pageop_stat.merge, pageop_stat.newly, pageop_stat.spill, pageop_stat.split);
+*/
 
-    // Committing tx also releases all cursors.
-    m_impl_batch->txn.commit();
+    m_impl_batch->m_txn.commit();
+    if(fPartitionUsed) parent.PartitionInc();
 
-    m_impl_batch->txn = parent.DBContext().env.start_write();
-    m_impl_batch->cur = m_impl_batch->txn.open_cursor(parent.DBContext().map);
+    m_impl_batch->m_txn = parent.DBContext().env.start_write();
 }
 
-void MDBXBatch::WriteImpl(Span<const std::byte> key, DataStream& value, bool possible_dup)
+void MDBXBatch::WriteImpl(Span<const std::byte> key, DataStream& value, bool sorted)
 {
-    mdbx::slice slKey(CharCast(key.data()), key.size());
-    value.Xor(m_parent.GetObfuscateKey());
-    mdbx::slice slValue(CharCast(value.data()), value.size());
-
     try {
-        if (!possible_dup) {
-            m_impl_batch->cur.put(slKey, slValue, mdbx::insert_unique);
+        value.Xor(m_parent.GetObfuscateKey());
+        mdbx::slice slValue(CharCast(value.data()), value.size());
+        if(sorted) {
+            LogDebug(BCLog::COINDB, "Sorted write of key: 0x%s", bytesToHexString(key));
+            DataStream partitioned_key;
+            ::Serialize(partitioned_key, DBPartitionedEntry{CurrentPartition(), key}); // FIXME: Extra copying to avoid CDBatchBase refactor
+            mdbx::slice slKey(CharCast(partitioned_key.data()), partitioned_key.size());
+            LogDebug(BCLog::COINDB, "Appending sorted key: %s\n", slKey.as_hex_string());
+            m_impl_batch->m_txn.append(m_impl_batch->m_map, slKey, slValue);
+            fPartitionUsed = true;
         }
         else {
-            m_impl_batch->cur.put(slKey, slValue, mdbx::upsert);
+            mdbx::slice slKey(CharCast(key.data()), key.size());
+            LogDebug(BCLog::COINDB, "Appending unsorted key: %s\n", slKey.as_hex_string());
+            m_impl_batch->m_txn.put(m_impl_batch->m_map, slKey, slValue, mdbx::upsert);
         }
-
     }
     catch (mdbx::error err) {
-        const std::string errmsg = "Fatal MDBX error: " + err.message();
+        const std::string errmsg = "Fatal MDBX error while writing: " + err.message();
         std::cout << errmsg << std::endl;
-        std::cout << "K: " << slKey.string_view() << "V: " << slValue;
+        std::cout << "K: " << key.data() << "V: " << value.data();
         throw dbwrapper_error(errmsg);
     }
 }
 
-void MDBXBatch::EraseImpl(Span<const std::byte> key)
+
+void MDBXBatch::EraseImpl(Span<const std::byte> key, bool sorted)
 {
-    mdbx::slice slKey(CharCast(key.data()), key.size());
-    m_impl_batch->cur.erase(slKey);
+    if (sorted) {
+        DataStream partitioned_key;
+        ::Serialize(partitioned_key, DBPartitionedEntry{CurrentPartition(), key}); // FIXME: Extra copying to avoid CDBatchBase refactor
+        mdbx::slice slKey(CharCast(partitioned_key.data()), partitioned_key.size());
+        LogDebug(BCLog::COINDB, "Appending sorted erase of key: %s\n", slKey.as_hex_string());
+        m_impl_batch->m_txn.append(m_impl_batch->m_map, slKey, TX_ERASE_VAL);
+        fPartitionUsed = true;
+    }
+    else {
+        mdbx::slice slKey(CharCast(key.data()), key.size());
+        LogDebug(BCLog::COINDB, "Performing unsorted erase of key: %s\n", slKey.as_hex_string());
+        m_impl_batch->m_txn.erase(m_impl_batch->m_map, slKey);
+    }
 }
 
 size_t MDBXBatch::SizeEstimate() const
 {
-    return m_impl_batch->txn.size_current();
+    return m_impl_batch->m_txn.size_current();
 }
 
 struct MDBXIterator::IteratorImpl {
@@ -720,7 +806,14 @@ void MDBXIterator::SeekToFirst()
 
 void MDBXIterator::Next()
 {
+    assert(0); // should never be called, need a param for deciding if a dbwrapper needs to be partitioned.
     valid = m_impl_iter->cursor->to_next(/*throw_notfound=*/false).done;
+}
+
+uint16_t CDBBatchBase::CurrentPartition() const
+{
+    LogDebug(BCLog::COINDB, "current partition value is: %d", m_parent.partition_index);
+    return m_parent.partition_index;
 }
 
 const std::vector<unsigned char>& CDBWrapperBase::GetObfuscateKey() const
