@@ -3,9 +3,11 @@ on:
   push:
     branches:
       - master
+      - benchcoin
   pull_request:
     branches:
       - master
+      - benchcoin
 jobs:
   # lint:
   #   runs-on: [self-hosted, linux, x64]
