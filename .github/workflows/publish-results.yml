@@ -1,5 +1,0 @@
-name: Publish Results
-on:
-  workflow_run:
-    workflows: ["CI"]
-    types: [completed]
