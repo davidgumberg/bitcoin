@@ -11,6 +11,8 @@ jobs:
       NIX_PATH: nixpkgs=channel:nixos-unstable
       # utxo.dat should be outside any $HOME dir due to NixOS service security settings
       UTXO_PATH: /var/lib/bitcoin/utxo-signet-160000.dat
+      BASE_SHA: ${{ github.event.pull_request.base.sha }}
+      HEAD_SHA: ${{ github.event.pull_request.head.sha }}
     steps:
       - name: Checkout repo
         uses: actions/checkout@v4
@@ -25,7 +27,7 @@ jobs:
         run: |
           env
           mkdir -p "$TMP_DATADIR"
-          nix-shell --command "just run-assumeutxo-signet-ci $TMP_DATADIR $UTXO_PATH ${{ github.event.pull_request.base.sha }} ${{github.event.pull_request.head.sha}} ${{ runner.temp }}/results.json"
+          nix-shell --command "just run-assumeutxo-signet-ci $TMP_DATADIR $UTXO_PATH $BASE_SHA $HEAD_SHA ${{ runner.temp }}/results.json"
       - uses: actions/upload-artifact@v4
         with:
           name: result
