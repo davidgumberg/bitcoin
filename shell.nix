@@ -1,10 +1,8 @@
 # Copyright 0xB10C
 { pkgs ? import (fetchTarball "https://github.com/nixos/nixpkgs/archive/nixos-unstable.tar.gz") {},
-  bdbVersion ? "",
   spareCores ? 0,
   withClang ? false,
   withDebug ? false,
-  withGui ? false,
 }:
 let
   inherit (pkgs.lib) optionals strings;
@@ -40,19 +38,11 @@ let
   '';
 
   binDirs =
-    [ "\$PWD/src" ]
-    ++ optionals withGui [ "\$PWD/src/qt" ];
+    [ "\$PWD/build/src" ];
   configureFlags =
     [ "--with-boost-libdir=$NIX_BOOST_LIB_DIR" ]
-    ++ optionals ((builtins.elem bdbVersion ["" "db48" "db5"]) || abort "Unsupported bdbVersion value: ${bdbVersion}") []
-    ++ optionals (bdbVersion == "") [ "--without-bdb" ]
-    ++ optionals (!(builtins.elem bdbVersion ["" "db48"])) [ "--with-incompatible-bdb" ]
     ++ optionals withClang [ "CXX=clang++" "CC=clang" ]
-    ++ optionals withDebug [ "--enable-debug" ]
-    ++ optionals withGui [
-      "--with-gui=qt5"
-      "--with-qt-bindir=${pkgs.qt5.qtbase.dev}/bin:${pkgs.qt5.qttools.dev}/bin"
-    ];
+    ++ optionals withDebug [ "--enable-debug" ];
   jobs =
     if (strings.hasSuffix "linux" builtins.currentSystem) then "$(($(nproc)-${toString spareCores}))"
     else if (strings.hasSuffix "darwin" builtins.currentSystem) then "$(($(sysctl -n hw.physicalcpu)-${toString spareCores}))"
@@ -90,18 +80,6 @@ in pkgs.mkShell {
       linuxPackages.bpftrace
       linuxPackages.bcc
 
-    ]
-    ++ lib.optionals (bdbVersion == "db48") [
-      db48
-    ]
-    ++ lib.optionals (bdbVersion == "db5") [
-      db5
-    ]
-    ++ lib.optionals withGui [
-      # bitcoin-qt
-      qt5.qtbase
-      # required for bitcoin-qt for "LRELEASE" etc
-      qt5.qttools
     ];
     buildInputs = with pkgs; [
       just
@@ -130,9 +108,6 @@ in pkgs.mkShell {
     # Modifies the Nix clang++ wrapper to avoid warning:
     # "_FORTIFY_SOURCE requires compiling with optimization (-O)"
     hardeningDisable = if withDebug then [ "all" ] else [ ];
-
-    # Fixes xcb plugin error when trying to launch bitcoin-qt
-    QT_QPA_PLATFORM_PLUGIN_PATH = if withGui then "${pkgs.qt5.qtbase.bin}/lib/qt-${pkgs.qt5.qtbase.version}/plugins/platforms" else "";
 
     shellHook = ''
       echo "Bitcoin Core build nix-shell"
