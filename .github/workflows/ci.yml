@@ -19,14 +19,19 @@ jobs:
           nix_path: $NIX_PATH
       - name: Run AssumeUTXO
         env:
-          DATADIR: "${{ runner.temp }}/bitcoin-datadir"
+          TMP_DATADIR: "${{ runner.temp }}/base_datadir"
+          RESULTS_DIR: "${{ runner.temp }}/results"
         run: |
-          mkdir -p "$DATADIR"
-          nix-shell --command "just run-assumeutxo-signet $DATADIR ${{ github.event.pull_request.base.sha }} ${{github.event.pull_request.head.sha}}"
+          env
+          mkdir -p "$TMP_DATADIR"
+          mkdir -p "$RESULTS_DIR"
+          nix-shell --command "just run-assumeutxo-signet-ci $TMP_DATADIR $UTXO_PATH $RESULTS_DIR ${{ github.event.pull_request.base.sha }} ${{github.event.pull_request.head.sha}}"
       - uses: actions/upload-artifact@v4
+        env:
+          RESULTS_DIR: "${{ runner.temp }}/results"
         with:
           name: result
-          path: results.json
+          path: "$RESULTS_DIR/results.json"
       - name: Write GitHub and runner context files
         env:
           GITHUB_CONTEXT: ${{ toJSON(github) }}
