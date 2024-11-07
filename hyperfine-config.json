@@ -4,6 +4,5 @@
   "prepare": "just prepare-assumeutxo-snapshot-run {commit} $TMP_DATADIR $UTXO_PATH",
   "cleanup": "",
   "runs": 1,
-  "show-output": true,
-  "export-json": "$RESULTS_DIR/results.json"
+  "show-output": true
 }

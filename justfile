@@ -112,5 +112,5 @@ prepare-assumeutxo-snapshot-run commit TMP_DATADIR UTXO_PATH:
 
 # Run assumeutxo CI workflow
 [group('ci')]
-run-assumeutxo-signet-ci $TMP_DATADIR $UTXO_PATH $RESULTS_DIR base_commit head_commit:
-    hyper-wrapper ./hyperfine-config.json {{base_commit}} {{head_commit}}
+run-assumeutxo-signet-ci $TMP_DATADIR $UTXO_PATH base_commit head_commit results_dir:
+    hyper-wrapper ./hyperfine-config.json {{base_commit}} {{head_commit}} {{results_dir}}

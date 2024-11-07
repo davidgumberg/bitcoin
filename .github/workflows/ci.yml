@@ -14,24 +14,22 @@ jobs:
     steps:
       - name: Checkout repo
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
       - uses: cachix/install-nix-action@v27
         with:
           nix_path: $NIX_PATH
       - name: Run AssumeUTXO
         env:
           TMP_DATADIR: "${{ runner.temp }}/base_datadir"
-          RESULTS_DIR: "${{ runner.temp }}/results"
         run: |
           env
           mkdir -p "$TMP_DATADIR"
-          mkdir -p "$RESULTS_DIR"
-          nix-shell --command "just run-assumeutxo-signet-ci $TMP_DATADIR $UTXO_PATH $RESULTS_DIR ${{ github.event.pull_request.base.sha }} ${{github.event.pull_request.head.sha}}"
+          nix-shell --command "just run-assumeutxo-signet-ci $TMP_DATADIR $UTXO_PATH ${{ github.event.pull_request.base.sha }} ${{github.event.pull_request.head.sha}} ${{ runner.temp }}/results.json"
       - uses: actions/upload-artifact@v4
-        env:
-          RESULTS_DIR: "${{ runner.temp }}/results"
         with:
           name: result
-          path: "$RESULTS_DIR/results.json"
+          path: "${{ runner.temp }}/results.json"
       - name: Write GitHub and runner context files
         env:
           GITHUB_CONTEXT: ${{ toJSON(github) }}
