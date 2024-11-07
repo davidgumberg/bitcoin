@@ -16,7 +16,6 @@ jobs:
       RESULT_FILE: "results.json"
       GITHUB_CONTEXT_FILE: "github.json"
       RUN_CONTEXT_FILE: "runner.json"
-      FLAMEGRAPH_FILE: "flamegraph.html"
 
     steps:
       - uses: actions/checkout@v4
@@ -70,7 +69,6 @@ jobs:
               `result/${process.env.RESULT_FILE}`,
               `run-metadata/${process.env.GITHUB_CONTEXT_FILE}`,
               `run-metadata/${process.env.RUN_CONTEXT_FILE}`,
-              `flamegraph/${process.env.FLAMEGRAPH_FILE}`
             ];
 
             filesToMove.forEach(file => {
@@ -79,6 +77,15 @@ jobs:
                 fs.copyFileSync(file, targetFile);
               }
             });
+
+            // Move all files from flamegraphs folder
+            if (fs.existsSync('flamegraphs')) {
+              fs.readdirSync('flamegraphs').forEach(file => {
+                const sourceFile = `flamegraphs/${file}`;
+                const targetFile = `${resultDir}/${file}`;
+                fs.copyFileSync(sourceFile, targetFile);
+              });
+            }
 
             // Create index.html for this run
             const resultData = JSON.parse(fs.readFileSync(`result/${process.env.RESULT_FILE}`, 'utf8'));
@@ -91,24 +98,24 @@ jobs:
               <body class="bg-gray-100 p-8">
                 <div class="max-w-4xl mx-auto">
                   <h1 class="text-3xl font-bold mb-8">Benchmark Results</h1>
-
                   <div class="bg-white rounded-lg shadow p-6 mb-8">
                     <h2 class="text-xl font-semibold mb-4">PR #${prNumber} - Run ${runId}</h2>
                     <div class="overflow-x-auto">
-                      <table class="min-w-full table-auto">
-                        <thead>
-                          <tr class="bg-gray-50">
-                            <th class="px-4 py-2">Branch</th>
-                            <th class="px-4 py-2">Command</th>
-                            <th class="px-4 py-2">Mean (s)</th>
-                            <th class="px-4 py-2">Std Dev</th>
-                            <th class="px-4 py-2">User (s)</th>
-                            <th class="px-4 py-2">System (s)</th>
-                          </tr>
-                        </thead>
-                        <tbody>
-                          ${resultData.results.map(result => `
-                            const commitShortId = result.parameters.commit.slice(0, 8)
+                      ${resultData.results.map(result => `
+                        const commitShortId = result.parameters.commit.slice(0, 8)
+                        const flameGraphPath = result.parameters.commit + "-flamegraph.html"
+                        <table class="min-w-full table-auto">
+                          <thead>
+                            <tr class="bg-gray-50">
+                              <th class="px-4 py-2">Branch</th>
+                              <th class="px-4 py-2">Command</th>
+                              <th class="px-4 py-2">Mean (s)</th>
+                              <th class="px-4 py-2">Std Dev</th>
+                              <th class="px-4 py-2">User (s)</th>
+                              <th class="px-4 py-2">System (s)</th>
+                            </tr>
+                          </thead>
+                          <tbody>
                             <tr class="border-t">
                               <td class="px-4 py-2 font-mono text-sm">
                                 <a href="https://github.com/bitcoin-dev-tools/benchcoin/commit/${commitShortId}">${commitShortId}</a>
@@ -119,18 +126,15 @@ jobs:
                               <td class="px-4 py-2 text-right">${result.user.toFixed(3)}</td>
                               <td class="px-4 py-2 text-right">${result.system.toFixed(3)}</td>
                             </tr>
-                          `).join('')}
-                        </tbody>
-                      </table>
+                          </tbody>
+                        </table>
+                      </div>
                     </div>
-                  </div>
 
-                  ${fs.existsSync(`flamegraph/${process.env.FLAMEGRAPH_FILE}`) ? `
-                    <div class="bg-white rounded-lg shadow p-6">
-                      <h2 class="text-xl font-semibold mb-4">Flamegraph</h2>
-                      <iframe src="${process.env.FLAMEGRAPH_FILE}" width="100%" height="800px" frameborder="0"></iframe>
-                    </div>
-                  ` : ''}
+                    ${fs.existsSync(flameGraphPath) ? `
+                      <iframe src="${flameGraphPath}" width="100%" height="800px" frameborder="0"></iframe>
+                    ` : ''}
+                `).join('')}
                 </div>
               </body>
             </html>`;
