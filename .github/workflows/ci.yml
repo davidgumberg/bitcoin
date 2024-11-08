@@ -4,6 +4,12 @@ on:
     branches:
       - master
 
+permissions:
+  contents: write
+  pages: write
+  id-token: write
+
+
 jobs:
   assumeutxo-signet:
     runs-on: [self-hosted, linux, x64]
