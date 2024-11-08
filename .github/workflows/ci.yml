@@ -52,12 +52,12 @@ jobs:
           path: ./contexts/
 
   build:
-    needs: assumeutxo-signet
-    runs-on: ubuntu-latest
     permissions:
       actions: read
       contents: write
       checks: read
+    needs: assumeutxo-signet
+    runs-on: ubuntu-latest
     env:
       RESULT_FILE: "results.json"
       GITHUB_CONTEXT_FILE: "github.json"
