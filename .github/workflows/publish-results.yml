@@ -67,7 +67,7 @@ jobs:
             const filesToMove = [
               `result/${process.env.RESULT_FILE}`,
               `run-metadata/${process.env.GITHUB_CONTEXT_FILE}`,
-              `run-metadata/${process.env.RUN_CONTEXT_FILE}`,
+              `run-metadata/${process.env.RUN_CONTEXT_FILE}`
             ];
 
             filesToMove.forEach(file => {
@@ -78,9 +78,9 @@ jobs:
             });
 
             // Move all files from flamegraphs folder
-            if (fs.existsSync('flamegraphs')) {
-              fs.readdirSync('flamegraphs').forEach(file => {
-                const sourceFile = `flamegraphs/${file}`;
+            if (fs.existsSync('flamegraph')) {
+              fs.readdirSync('flamegraph').forEach(file => {
+                const sourceFile = `flamegraph/${file}`;
                 const targetFile = `${resultDir}/${file}`;
                 fs.copyFileSync(sourceFile, targetFile);
               });
