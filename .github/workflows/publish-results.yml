@@ -102,7 +102,8 @@ jobs:
                     <div class="overflow-x-auto">
                       ${resultData.results.map(result => {
                         const commitShortId = result.parameters.commit.slice(0, 8)
-                        const flameGraphPath = `${resultDir}/${result.parameters.commit}-flamegraph.html`
+                        const flameGraphFile = `${result.paramaters.commit}-flamegraph.html`
+                        const flameGraphPath = `${resultDir}/${flameGraphFile}`
 
                         return `
                           <table class="min-w-full table-auto">
@@ -131,7 +132,7 @@ jobs:
                           </table>
 
                           ${fs.existsSync(flameGraphPath) ? `
-                            <iframe src="${flameGraphPath}" width="100%" height="800px" frameborder="0"></iframe>
+                            <iframe src="${flameGraphFile}" width="100%" height="800px" frameborder="0"></iframe>
                           ` : ''}
                         `
                       }).join('')}
