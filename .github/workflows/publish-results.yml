@@ -6,7 +6,6 @@ on:
 
 jobs:
   build-page:
-    needs: assumeutxo-signet
     runs-on: ubuntu-latest
     permissions:
       actions: read
