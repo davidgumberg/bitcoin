@@ -67,7 +67,7 @@ jobs:
             const filesToMove = [
               `result/${process.env.RESULT_FILE}`,
               `run-metadata/${process.env.GITHUB_CONTEXT_FILE}`,
-              `run-metadata/${process.env.RUN_CONTEXT_FILE}`,
+              `run-metadata/${process.env.RUN_CONTEXT_FILE}`
             ];
 
             filesToMove.forEach(file => {
@@ -78,9 +78,9 @@ jobs:
             });
 
             // Move all files from flamegraphs folder
-            if (fs.existsSync('flamegraphs')) {
-              fs.readdirSync('flamegraphs').forEach(file => {
-                const sourceFile = `flamegraphs/${file}`;
+            if (fs.existsSync('flamegraph')) {
+              fs.readdirSync('flamegraph').forEach(file => {
+                const sourceFile = `flamegraph/${file}`;
                 const targetFile = `${resultDir}/${file}`;
                 fs.copyFileSync(sourceFile, targetFile);
               });
@@ -102,7 +102,7 @@ jobs:
                     <div class="overflow-x-auto">
                       ${resultData.results.map(result => {
                         const commitShortId = result.parameters.commit.slice(0, 8)
-                        const flameGraphPath = result.parameters.commit + "-flamegraph.html"
+                        const flameGraphPath = `result/${result.parameters.commit}-flamegraph.html`
 
                         return `
                           <table class="min-w-full table-auto">
