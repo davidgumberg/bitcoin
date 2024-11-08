@@ -5,7 +5,7 @@ on:
     types: [completed]
 
 jobs:
-  build-page:
+  build:
     runs-on: ubuntu-latest
     if: ${{ github.event.workflow_run.conclusion == 'success' }}
     permissions:
@@ -26,23 +26,26 @@ jobs:
         uses: actions/download-artifact@v4
         with:
           name: result
-          path: result
+          github-token: ${{ secrets.GH_PAT }}
           run-id: ${{ github.event.workflow_run.id }}
+          path: result
 
       - name: Download metadata artifact
         uses: actions/download-artifact@v4
         with:
           name: run-metadata
-          path: run-metadata
+          github-token: ${{ secrets.GH_PAT }}
           run-id: ${{ github.event.workflow_run.id }}
+          path: run-metadata
 
       - name: Download flamegraph artifact
         continue-on-error: true
         uses: actions/download-artifact@v4
         with:
           name: flamegraph
-          path: flamegraph
+          github-token: ${{ secrets.GH_PAT }}
           run-id: ${{ github.event.workflow_run.id }}
+          path: flamegraph
 
       - name: Organize results
         id: organize
