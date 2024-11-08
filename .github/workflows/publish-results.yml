@@ -7,6 +7,7 @@ on:
 jobs:
   build-page:
     runs-on: ubuntu-latest
+    if: ${{ github.event.workflow_run.conclusion == 'success' }}
     permissions:
       actions: read
       contents: write
@@ -26,12 +27,14 @@ jobs:
         with:
           name: result
           path: result
+          run-id: ${{ github.event.workflow_run.id }}
 
       - name: Download metadata artifact
         uses: actions/download-artifact@v4
         with:
           name: run-metadata
           path: run-metadata
+          run-id: ${{ github.event.workflow_run.id }}
 
       - name: Download flamegraph artifact
         continue-on-error: true
@@ -39,6 +42,7 @@ jobs:
         with:
           name: flamegraph
           path: flamegraph
+          run-id: ${{ github.event.workflow_run.id }}
 
       - name: Organize results
         id: organize
@@ -193,7 +197,6 @@ jobs:
           git push origin gh-pages
 
   comment-pr:
-    needs: assumeutxo-signet
     runs-on: ubuntu-latest
     permissions:
       pull-requests: write
