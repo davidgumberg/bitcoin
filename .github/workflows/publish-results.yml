@@ -102,7 +102,7 @@ jobs:
                     <div class="overflow-x-auto">
                       ${resultData.results.map(result => {
                         const commitShortId = result.parameters.commit.slice(0, 8)
-                        const flameGraphFile = `${result.paramaters.commit}-flamegraph.html`
+                        const flameGraphFile = `${result.parameters.commit}-flamegraph.html`
                         const flameGraphPath = `${resultDir}/${flameGraphFile}`
 
                         return `
