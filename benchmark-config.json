@@ -3,6 +3,7 @@
   "parameter-list": [ ],
   "setup": "just setup-assumeutxo-snapshot-run {commit} $TMP_DATADIR",
   "prepare": "just prepare-assumeutxo-snapshot-run {commit} $TMP_DATADIR $UTXO_PATH",
+  "conclude": "just conclude-assumeutxo-snapshot-run {commit} $TMP_DATADIR",
   "cleanup": "just cleanup-assumeutxo-snapshot-run $TMP_DATADIR",
   "runs": 1,
   "show-output": true
