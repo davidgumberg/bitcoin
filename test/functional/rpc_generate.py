@@ -4,11 +4,14 @@
 # file COPYING or http://www.opensource.org/licenses/mit-license.php.
 """Test generate* RPCs."""
 
+from threading import Thread
+
 from test_framework.test_framework import BitcoinTestFramework
 from test_framework.wallet import MiniWallet
 from test_framework.util import (
     assert_equal,
     assert_raises_rpc_error,
+    get_rpc_proxy,
 )
 
 
@@ -82,6 +85,20 @@ class RPCGenerateTest(BitcoinTestFramework):
         assert_equal(len(block['tx']), 2)
         txid = block['tx'][1]
         assert_equal(node.getrawtransaction(txid=txid, verbose=False, blockhash=hash), rawtx)
+
+        # Ensure that generateblock can be called concurrently by many threads.
+        # See #31562 (https://github.com/bitcoin/bitcoin/issues/31562)
+        self.log.info('Generate blocks in parallel')
+        generate_50_blocks = lambda n: [ n.generateblock(output=address, transactions=[]) for _ in range(50) ]
+        threads = []
+        for _ in range(6):
+            n = get_rpc_proxy(node.url, 1, timeout=600, coveragedir=node.coverage_dir)
+            thread = Thread(target=generate_50_blocks, args=(n,))
+            threads.append(thread)
+            thread.start()
+
+        for t in threads:
+            t.join()
 
         self.log.info('Fail to generate block with out of order txs')
         txid1 = miniwallet.send_self_transfer(from_node=node)['txid']
