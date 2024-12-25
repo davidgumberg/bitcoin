@@ -5,6 +5,12 @@
 """Test generate* RPCs."""
 
 from test_framework.test_framework import BitcoinTestFramework
+from test_framework.messages import CTxOut
+from test_framework.script import (
+    CScript,
+    OP_TRUE,
+)
+from test_framework.script_util import script_to_p2sh_script
 from test_framework.wallet import MiniWallet
 from test_framework.util import (
     assert_equal,
@@ -83,6 +89,19 @@ class RPCGenerateTest(BitcoinTestFramework):
         txid = block['tx'][1]
         assert_equal(node.getrawtransaction(txid=txid, verbose=False, blockhash=hash), rawtx)
 
+        self.log.info('Succeed at generating block with 64-byte raw tx')
+        # Create a 3-byte long script which anyone can spend
+        script_anyone_can_spend = CScript([OP_TRUE, b'\xb2'])
+        # Get the P2SH address
+        p2sh_anyone_can_spend = script_to_p2sh_script(script_anyone_can_spend)
+        tx_anyone_can_spend = miniwallet.create_self_transfer()["tx"]
+        tx_anyone_can_spend.vout = CTxOut(0, bytearray(p2sh_anyone_can_spend))
+        self.log.info(tx_anyone_can_spend)
+        self.log.info(tx_anyone_can_spend.vout)
+        miniwallet.sign_tx(tx_anyone_can_spend)
+        tx_anyone_can_spend.rehash()
+        # self.log.info(short_anyone_can_spend.hex())
+
         self.log.info('Fail to generate block with out of order txs')
         txid1 = miniwallet.send_self_transfer(from_node=node)['txid']
         utxo1 = miniwallet.get_utxo(txid=txid1)
@@ -107,6 +126,8 @@ class RPCGenerateTest(BitcoinTestFramework):
         self.log.info('Fail to generate block with a descriptor missing a private key')
         child_descriptor = 'pkh(tpubD6NzVbkrYhZ4XgiXtGrdW5XDAPFCL9h7we1vwNCpn8tGbBcgfVYjXyhWo4E1xkh56hjod1RhGjxbaTLV3X4FyWuejifB9jusQ46QzG87VKp/0\'/0)'
         assert_raises_rpc_error(-5, 'Cannot derive script without private keys', self.generateblock, node, child_descriptor, [])
+
+
 
     def test_generate(self):
         message = (
