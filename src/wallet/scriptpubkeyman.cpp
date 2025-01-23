@@ -938,6 +938,9 @@ bool LegacyDataSPKM::LoadWatchOnly(const CScript &dest)
 bool LegacyDataSPKM::AddWatchOnlyInMem(const CScript &dest)
 {
     LOCK(cs_KeyStore);
+    if(IsMineInner(*this, dest, IsMineSigVersion::TOP) == IsMineResult::INVALID) {
+        return false;
+    }
     setWatchOnly.insert(dest);
     CPubKey pubKey;
     if (ExtractPubKey(dest, pubKey)) {
