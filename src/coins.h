@@ -87,6 +87,33 @@ public:
     }
 };
 
+/**
+ * A UTXO entry that lacks ScriptPubKey information, useful for CheckTxInputs
+ * below the assumevalid checkpoint.
+ */
+class PartialCoin
+{
+public:
+    //! value of the coin in satoshis.
+    unsigned long nValue : 39;
+    //! whether containing transaction was a coinbase
+    bool fCompactRepresentable : 1;
+
+    static const uint64_t high_fifteen_mask = 0x7FFF000000000000ULL;
+
+    PartialCoin(CAmount val, bool fCoinBaseIn) {
+        if(fCoinBaseIn || val & high_fifteen_mask) {
+            fCompactRepresentable = false;
+            return;
+        }
+    }
+
+    PartialCoin(const Coin &coin) {
+        PartialCoin(coin.out.nValue, coin.fCoinBase);
+    }
+};
+
+
 struct CCoinsCacheEntry;
 using CoinsCachePair = std::pair<const COutPoint, CCoinsCacheEntry>;
 
@@ -212,6 +239,9 @@ public:
         m_flags = DIRTY;
     }
 };
+
+// We can represent each txout with an 8 byte short-txid and it's vout.
+using CmpctCoinsSet = std::unordered_map<CmpctOutPoint>;
 
 /**
  * PoolAllocator's MAX_BLOCK_SIZE_BYTES parameter here uses sizeof the data, and adds the size
@@ -374,6 +404,7 @@ protected:
     /* The starting sentinel of the flagged entry circular doubly linked list. */
     mutable CoinsCachePair m_sentinel;
     mutable CCoinsMap cacheCoins;
+    mutable CmpctCoinsSet cmpctCoinsSet;
 
     /* Cached dynamic memory usage for the inner Coin objects. */
     mutable size_t cachedCoinsUsage{0};

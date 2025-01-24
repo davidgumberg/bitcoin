@@ -99,6 +99,7 @@ void CCoinsViewCache::AddCoin(const COutPoint &outpoint, Coin&& coin, bool possi
         fresh = !it->second.IsDirty();
     }
     it->second.coin = std::move(coin);
+    cmpctCoinsSet.emplace(outpoint);
     CCoinsCacheEntry::SetDirty(*it, m_sentinel);
     if (fresh) CCoinsCacheEntry::SetFresh(*it, m_sentinel);
     cachedCoinsUsage += it->second.coin.DynamicMemoryUsage();
@@ -146,6 +147,7 @@ bool CCoinsViewCache::SpendCoin(const COutPoint &outpoint, Coin* moveout) {
         CCoinsCacheEntry::SetDirty(*it, m_sentinel);
         it->second.coin.Clear();
     }
+        cmpctCoinsSet.erase(outpoint);
     return true;
 }
 

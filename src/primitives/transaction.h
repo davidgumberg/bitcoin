@@ -59,6 +59,20 @@ public:
     std::string ToString() const;
 };
 
+struct CmpctOutPoint
+{
+public:
+    uint64_t cmpct_hash;
+    uint32_t n;
+
+    CmpctOutPoint(const COutPoint &outpoint) {
+        std::memcpy(&cmpct_hash, outpoint.hash.data(), 4);
+        n = outpoint.n;
+    }
+
+    auto operator<=>(const CmpctOutPoint& other) const = default;
+};
+
 /** An input of a transaction.  It contains the location of the previous
  * transaction's output that it claims and a signature that matches the
  * output's public key.
