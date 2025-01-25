@@ -45,7 +45,7 @@ public:
     //! Default/minimum number of key derivation rounds
     // 25000 rounds is just under 0.1 seconds on a 1.86 GHz Pentium M
     // ie slightly lower than the lowest hardware we need bother supporting
-    static constexpr int DEFAULT_DERIVE_ITERATIONS = 25000;
+    static constexpr unsigned int DEFAULT_DERIVE_ITERATIONS = 25000;
 
     SERIALIZE_METHODS(CMasterKey, obj)
     {

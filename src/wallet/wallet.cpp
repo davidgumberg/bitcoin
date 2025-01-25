@@ -575,19 +575,22 @@ void CWallet::UpgradeDescriptorCache()
 static bool EncryptMasterKey(const SecureString& wallet_passphrase, const CKeyingMaterial& plain_master_key, CMasterKey& master_key)
 {
     constexpr MillisecondsDouble target{100};
-    auto start{SteadyClock::now()};
     CCrypter crypter;
 
-    crypter.SetKeyFromPassphrase(wallet_passphrase, master_key.vchSalt, master_key.nDeriveIterations, master_key.nDerivationMethod);
-    master_key.nDeriveIterations = static_cast<unsigned int>(master_key.nDeriveIterations * target / (SteadyClock::now() - start));
+    auto adjust_iterations = [&](unsigned int current_iterations) -> unsigned int {
+        auto start{SteadyClock::now()};
 
-    start = SteadyClock::now();
-    crypter.SetKeyFromPassphrase(wallet_passphrase, master_key.vchSalt, master_key.nDeriveIterations, master_key.nDerivationMethod);
-    master_key.nDeriveIterations = (master_key.nDeriveIterations + static_cast<unsigned int>(master_key.nDeriveIterations * target / (SteadyClock::now() - start))) / 2;
+        if (!crypter.SetKeyFromPassphrase(wallet_passphrase, master_key.vchSalt, current_iterations, master_key.nDerivationMethod)) {
+            return false;
+        }
 
-    if (master_key.nDeriveIterations < CMasterKey::DEFAULT_DERIVE_ITERATIONS) {
-        master_key.nDeriveIterations = CMasterKey::DEFAULT_DERIVE_ITERATIONS;
-    }
+        return current_iterations * target / (SteadyClock::now() - start);
+    };
+
+    master_key.nDeriveIterations = adjust_iterations(master_key.nDeriveIterations);
+    master_key.nDeriveIterations = (master_key.nDeriveIterations + adjust_iterations(master_key.nDeriveIterations)) / 2;
+
+    master_key.nDeriveIterations = std::max(CMasterKey::DEFAULT_DERIVE_ITERATIONS, master_key.nDeriveIterations);
 
     if (!crypter.SetKeyFromPassphrase(wallet_passphrase, master_key.vchSalt, master_key.nDeriveIterations, master_key.nDerivationMethod)) {
         return false;
