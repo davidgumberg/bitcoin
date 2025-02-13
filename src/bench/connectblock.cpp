@@ -69,7 +69,7 @@ CBlock CreateTestBlock(
  * - For non-Taproot outputs: Creates P2WPKH (native SegWit v0) outputs
  * - All outputs have value of 1 BTC
  */
-std::pair<std::vector<CKey>, std::vector<CTxOut>> CreateKeysAndOutputs(const CKey& coinbaseKey, size_t num_taproot, size_t num_nontaproot)
+std::pair<std::vector<CKey>, std::vector<CTxOut>> CreateKeysAndOutputs(const CKey& coinbaseKey, size_t num_taproot, size_t num_nontaproot, size_t num_pkh)
 {
     std::vector<CKey> keys{coinbaseKey};
     keys.reserve(num_taproot + num_nontaproot + 1);
@@ -87,6 +87,12 @@ std::pair<std::vector<CKey>, std::vector<CTxOut>> CreateKeysAndOutputs(const CKe
         CKey key{GenerateRandomKey()};
         keys.emplace_back(key);
         outputs.emplace_back(COIN, GetScriptForDestination(WitnessV1Taproot{XOnlyPubKey(key.GetPubKey())}));
+    }
+
+    for (size_t i{0}; i < num_pkh; i++) {
+        CKey key{GenerateRandomKey()};
+        keys.emplace_back(key);
+        outputs.emplace_back(COIN, GetScriptForDestination(PKHash{key.GetPubKey()}));
     }
 
     return {keys, outputs};
@@ -115,7 +121,7 @@ void BenchmarkConnectBlock(benchmark::Bench& bench, std::vector<CKey>& keys, std
 static void ConnectBlockAllSchnorr(benchmark::Bench& bench)
 {
     const std::unique_ptr test_setup{MakeNoLogFileContext<TestChain100Setup>()};
-    auto [keys, outputs]{CreateKeysAndOutputs(test_setup->coinbaseKey, /*num_taproot=*/4, /*num_nontaproot=*/0)};
+    auto [keys, outputs]{CreateKeysAndOutputs(test_setup->coinbaseKey, /*num_taproot=*/4, /*num_nontaproot=*/0, /*num_pkh=*/0)};
     BenchmarkConnectBlock(bench, keys, outputs, *test_setup);
 }
 
@@ -129,17 +135,25 @@ static void ConnectBlockMixed(benchmark::Bench& bench)
 {
     const std::unique_ptr test_setup{MakeNoLogFileContext<TestChain100Setup>()};
     // Blocks in range 848000 to 868000 have a roughly 20 to 80 ratio of schnorr to ecdsa inputs
-    auto [keys, outputs]{CreateKeysAndOutputs(test_setup->coinbaseKey, /*num_taproot=*/1, /*num_nontaproot=*/4)};
+    auto [keys, outputs]{CreateKeysAndOutputs(test_setup->coinbaseKey, /*num_taproot=*/1, /*num_nontaproot=*/4, /*num_pkh=*/0)};
     BenchmarkConnectBlock(bench, keys, outputs, *test_setup);
 }
 
 static void ConnectBlockNoSchnorr(benchmark::Bench& bench)
 {
     const std::unique_ptr test_setup{MakeNoLogFileContext<TestChain100Setup>()};
-    auto [keys, outputs]{CreateKeysAndOutputs(test_setup->coinbaseKey, /*num_taproot=*/0, /*num_nontaproot=*/4)};
+    auto [keys, outputs]{CreateKeysAndOutputs(test_setup->coinbaseKey, /*num_taproot=*/0, /*num_nontaproot=*/4, /*num_pkh=*/0)};
+    BenchmarkConnectBlock(bench, keys, outputs, *test_setup);
+}
+
+static void ConnectBlockPKH(benchmark::Bench& bench)
+{
+    const std::unique_ptr test_setup{MakeNoLogFileContext<TestChain100Setup>()};
+    auto [keys, outputs]{CreateKeysAndOutputs(test_setup->coinbaseKey, /*num_taproot=*/0, /*num_nontaproot=*/0, /*num_pkh=*/4)};
     BenchmarkConnectBlock(bench, keys, outputs, *test_setup);
 }
 
 BENCHMARK(ConnectBlockAllSchnorr, benchmark::PriorityLevel::HIGH);
 BENCHMARK(ConnectBlockMixed, benchmark::PriorityLevel::HIGH);
 BENCHMARK(ConnectBlockNoSchnorr, benchmark::PriorityLevel::HIGH);
+BENCHMARK(ConnectBlockPKH, benchmark::PriorityLevel::HIGH);
