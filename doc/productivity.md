@@ -40,6 +40,7 @@ To get the most out of ccache, put something like this in `~/.ccache/ccache.conf
 ```
 max_size = 50.0G  # or whatever cache size you prefer; default is 5G; 0 means unlimited
 base_dir = /home/yourname  # or wherever you keep your source files
+hash_dir = false
 ```
 
 Note: base_dir is required for ccache to share cached compiles of the same file across different repositories / paths; it will only do this for paths under base_dir. So this option is required for effective use of ccache with git worktrees (described below).
