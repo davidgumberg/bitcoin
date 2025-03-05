@@ -873,7 +873,7 @@ WinCmdLineArgs::WinCmdLineArgs()
     std::wstring_convert<std::codecvt_utf8_utf16<wchar_t>, wchar_t> utf8_cvt;
     argv = new char*[argc];
     args.resize(argc);
-    for (int i = 0; i < argc; i++) {
+    for (int i = 0; i < argc-1; i++) {
         args[i] = utf8_cvt.to_bytes(wargv[i]);
         argv[i] = &*args[i].begin();
     }
