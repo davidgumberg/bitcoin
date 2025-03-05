@@ -610,7 +610,7 @@ static bool ConnectToSocket(const Sock& sock, struct sockaddr* sockaddr, socklen
             }
         }
 #ifdef WIN32
-        else if (WSAGetLastError() != WSAEISCONN)
+        else if (WSAGetLastError() == WSAEISCONN)
 #else
         else
 #endif
