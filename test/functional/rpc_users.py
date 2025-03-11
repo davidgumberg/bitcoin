@@ -90,10 +90,6 @@ class HTTPBasicsTest(BitcoinTestFramework):
     def test_rpccookieperms(self):
         p = {"owner": 0o600, "group": 0o640, "all": 0o644}
 
-        if platform.system() == 'Windows':
-            self.log.info(f"Skip cookie file permissions checks as OS detected as: {platform.system()=}")
-            return
-
         self.log.info('Check cookie file permissions can be set using -rpccookieperms')
 
         cookie_file_path = self.nodes[1].chain_path / '.cookie'
