@@ -84,6 +84,15 @@ ReadStatus PartiallyDownloadedBlock::InitData(const CBlockHeaderAndShortTxIDs& c
             return READ_STATUS_INVALID;
         }
         txn_available[lastprefilledindex] = cmpctblock.prefilledtxn[i].tx;
+
+        {
+            // Only consider prefilled transactions that were NOT in our mempool as candidates
+            // that WE want to prefill.
+            LOCK(pool->cs); // TODO: locking in a tight loop?
+            if (!pool->exists(cmpctblock.prefilledtxn[i].tx->GetWitnessHash())) {
+                prefill_candidates.insert(lastprefilledindex);
+            }
+        }
     }
     prefilled_count = cmpctblock.prefilledtxn.size();
 
@@ -148,6 +157,7 @@ ReadStatus PartiallyDownloadedBlock::InitData(const CBlockHeaderAndShortTxIDs& c
         if (idit != shorttxids.end()) {
             if (!have_txn[idit->second]) {
                 txn_available[idit->second] = extra_txn[i].second;
+                prefill_candidates.insert(idit->second);
                 have_txn[idit->second]  = true;
                 mempool_count++;
                 extra_count++;
@@ -186,6 +196,11 @@ bool PartiallyDownloadedBlock::IsTxAvailable(size_t index) const
     return txn_available[index] != nullptr;
 }
 
+std::set<uint32_t> PartiallyDownloadedBlock::PrefillCandidates() const
+{
+    return prefill_candidates;
+}
+
 ReadStatus PartiallyDownloadedBlock::FillBlock(CBlock& block, const std::vector<CTransactionRef>& vtx_missing, bool segwit_active)
 {
     if (header.IsNull()) return READ_STATUS_INVALID;
@@ -199,6 +214,7 @@ ReadStatus PartiallyDownloadedBlock::FillBlock(CBlock& block, const std::vector<
             if (tx_missing_offset >= vtx_missing.size()) {
                 return READ_STATUS_INVALID;
             }
+            prefill_candidates.insert(i);
             block.vtx[i] = vtx_missing[tx_missing_offset++];
         } else {
             block.vtx[i] = std::move(txn_available[i]);
