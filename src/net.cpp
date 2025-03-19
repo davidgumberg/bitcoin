@@ -3958,12 +3958,17 @@ std::pair<uint32_t, uint32_t> CNode::WindowBytesTotalAndAvailable()
         LOCK(m_sock_mutex);
         auto tcp_info = TCPInfo{*m_sock};
         window_size = tcp_info.GetTCPWindowSize();
+        // Bytes sitting in the OS's send queue + un'ACKed bytes on the wire.
         bytes_inflight = m_sock->GetOSBytesQueued(tcp_info);
     }
+    // Bytes sitting in our application layer queue for this CNode.
     bytes_inqueue = GetSendQueueSize();
 
+    // Bytes between the previous and next window boundary that are used.
+    auto bytes_used = (bytes_inflight + bytes_inqueue) % window_size;
+
     // How many bytes we can use before reaching the next window boundary.
-    bytes_available = (window_size - bytes_inflight - bytes_inqueue) % window_size;
+    bytes_available = window_size - bytes_used;
 
     LogDebug(BCLog::NET,
        "WindowBytes: Total: %d bytes, In flight: %d bytes, In send queue: %d, Available: %d",
