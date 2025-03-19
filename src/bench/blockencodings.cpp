@@ -47,7 +47,7 @@ private:
     }
 
 public:
-    BenchCBHAST(InsecureRandomContext& rng, int txs) : CBlockHeaderAndShortTxIDs(DummyBlock(), rng.rand64())
+    BenchCBHAST(InsecureRandomContext& rng, int txs) : CBlockHeaderAndShortTxIDs(DummyBlock(), rng.rand64(), /*prefill_candidates=*/{})
     {
         shorttxids.reserve(txs);
         while (txs-- > 0) {
