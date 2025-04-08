@@ -107,7 +107,7 @@ private:
 
     const fs::path m_dir_path;
 
-    const std::string m_file_path;
+    const fs::path m_file_path;
 
     /**
      * This mutex protects SQLite initialization and shutdown.
@@ -165,13 +165,13 @@ public:
 
     void IncrementUpdateCounter() override { ++nUpdateCounter; }
 
-    std::string Filename() override { return m_file_path; }
+    std::string Filename() override { return fs::PathToString(m_file_path); }
     /** Return paths to all database created files */
     std::vector<fs::path> Files() override
     {
         std::vector<fs::path> files;
-        files.emplace_back(m_dir_path / fs::PathFromString(m_file_path));
-        files.emplace_back(m_dir_path / fs::PathFromString(m_file_path + "-journal"));
+        files.emplace_back(m_dir_path / m_file_path);
+        files.emplace_back(m_dir_path / m_file_path + "-journal");
         return files;
     }
     std::string Format() override { return "sqlite"; }

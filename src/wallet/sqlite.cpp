@@ -112,7 +112,7 @@ Mutex SQLiteDatabase::g_sqlite_mutex;
 int SQLiteDatabase::g_sqlite_count = 0;
 
 SQLiteDatabase::SQLiteDatabase(const fs::path& dir_path, const fs::path& file_path, const DatabaseOptions& options, bool mock)
-    : WalletDatabase(), m_mock(mock), m_dir_path(dir_path), m_file_path(fs::PathToString(file_path)), m_write_semaphore(1), m_use_unsafe_sync(options.use_unsafe_sync)
+    : WalletDatabase(), m_mock(mock), m_dir_path(dir_path), m_file_path(file_path), m_write_semaphore(1), m_use_unsafe_sync(options.use_unsafe_sync)
 {
     {
         LOCK(g_sqlite_mutex);
@@ -255,7 +255,7 @@ void SQLiteDatabase::Open()
         if (!m_mock) {
             TryCreateDirectories(m_dir_path);
         }
-        int ret = sqlite3_open_v2(m_file_path.c_str(), &m_db, flags, nullptr);
+        int ret = sqlite3_open_v2(fs::PathToString(m_file_path).c_str(), &m_db, flags, nullptr);
         if (ret != SQLITE_OK) {
             throw std::runtime_error(strprintf("SQLiteDatabase: Failed to open database: %s\n", sqlite3_errstr(ret)));
         }
