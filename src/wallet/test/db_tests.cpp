@@ -14,6 +14,7 @@
 #include <wallet/bdb.h>
 #endif
 #ifdef USE_SQLITE
+#include <sqlite3.h>
 #include <wallet/sqlite.h>
 #endif
 #include <wallet/migrate.h>
@@ -144,6 +145,24 @@ static std::vector<std::unique_ptr<WalletDatabase>> TestDatabases(const fs::path
     dbs.emplace_back(CreateMockableWalletDatabase());
     return dbs;
 }
+
+#ifdef USE_SQLITE
+BOOST_AUTO_TEST_CASE(sqlite_db_files)
+{
+    DatabaseOptions options;
+    DatabaseStatus status;
+    bilingual_str error;
+    std::unique_ptr<SQLiteDatabase> sqldb = MakeSQLiteDatabase(m_path_root / "sqlite", options, status, error);
+
+    auto sqlite_internal_filename(sqlite3_db_filename(sqldb->m_db, "main"));
+    BOOST_CHECK(sqlite_internal_filename != nullptr);
+
+    std::vector<fs::path> sql_paths;
+    sql_paths.push_back(fs::PathFromString(sqlite3_filename_database(sqlite_internal_filename)));
+    sql_paths.push_back(fs::PathFromString(sqlite3_filename_journal(sqlite_internal_filename)));
+    BOOST_TEST(sql_paths == sqldb->Files(), boost::test_tools::per_element());
+}
+#endif
 
 BOOST_AUTO_TEST_CASE(db_cursor_prefix_range_test)
 {
