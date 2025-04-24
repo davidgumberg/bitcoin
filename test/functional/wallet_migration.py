@@ -939,7 +939,17 @@ class WalletMigrationTest(BitcoinTestFramework):
 
         wallet.unloadwallet()
 
-    def test_failed_migration_cleanup(self):
+    def test_failed_migration_cleanup2(self, path, dat_name="wallet.dat"):
+        wallet = self.create_legacy_wallet(path)
+
+        # Make a copy of the wallet with the solvables wallet name so that we are unable
+        # to create the solvables wallet when migrating, thus failing to migrate
+        wallet.unloadwallet()
+        solvables_path = self.master_node.wallets_path / "failed_solvables"
+        shutil.copytree(self.old_node.wallets_path / "failed", solvables_path)
+        original_shasum = sha256sum_file(solvables_path / dat_name )
+
+    def test_failed_migration_cleanup_simple(self):
         self.log.info("Test that a failed migration is cleaned up")
         wallet = self.create_legacy_wallet("failed")
 
@@ -962,7 +972,7 @@ class WalletMigrationTest(BitcoinTestFramework):
 
         assert all(wallet not in self.master_node.listwallets() for wallet in ["failed", "failed_watchonly", "failed_solvables"])
 
-        assert not (self.master_node.wallets_path / "failed_watchonly").exists()
+        assert not (self.master_node.wallets_path / f"failed_watchonly").exists()
         # Since the file in failed_solvables is one that we put there, migration shouldn't touch it
         assert solvables_path.exists()
         new_shasum = sha256sum_file(solvables_path / "wallet.dat")
@@ -1024,7 +1034,7 @@ class WalletMigrationTest(BitcoinTestFramework):
 
         assert all(wallet not in self.master_node.listwallets() for wallet in [f"{wallet_name}", f"{wallet_name}_watchonly", f"{wallet_name}_solvables"])
 
-        assert not (self.master_node.wallets_path / "failed_watchonly").exists()
+        assert not (self.master_node.wallets_path / f"{wallet_name}_watchonly").exists()
         # Since the file in failed_solvables is one that we put there, migration shouldn't touch it
         assert os.path.exists(solvables_path)
         new_shasum = sha256sum_file(os.path.join(solvables_path , "wallet.dat"))
