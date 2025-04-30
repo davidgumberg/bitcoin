@@ -192,9 +192,9 @@ set(APPEND_CXXFLAGS "" CACHE STRING "(Objective) C++ compiler flags that are app
 set(APPEND_LDFLAGS "" CACHE STRING "Linker flags that are appended to the command line after all other flags added by the build system. This variable is intended for debugging and special builds.")
 # Appending to this low-level rule variables is the only way to
 # guarantee that the flags appear at the end of the command line.
-string(APPEND CMAKE_CXX_COMPILE_OBJECT " ${APPEND_CPPFLAGS} ${APPEND_CXXFLAGS}")
-string(APPEND CMAKE_CXX_CREATE_SHARED_LIBRARY " ${APPEND_LDFLAGS}")
-string(APPEND CMAKE_CXX_LINK_EXECUTABLE " ${APPEND_LDFLAGS}")
+string(REPLACE "<FLAGS>" "<FLAGS> ${APPEND_CPPFLAGS} ${APPEND_CXXFLAGS}" CMAKE_CXX_COMPILE_OBJECT "${CMAKE_CXX_COMPILE_OBJECT}")
+string(REPLACE "<LINK_FLAGS>" "<LINK_FLAGS> ${APPEND_LDFLAGS}" CMAKE_CXX_CREATE_SHARED_LIBRARY "${CMAKE_CXX_CREATE_SHARED_LIBRARY}")
+string(REPLACE "<LINK_FLAGS>" "<LINK_FLAGS> ${APPEND_LDFLAGS}" CMAKE_CXX_LINK_EXECUTABLE "${CMAKE_CXX_LINK_EXECUTABLE}")
 
 set(configure_warnings)
 
