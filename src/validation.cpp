@@ -4652,12 +4652,11 @@ bool TestBlockValidity(BlockValidationState& state,
                        const CChainParams& chainparams,
                        Chainstate& chainstate,
                        const CBlock& block,
-                       CBlockIndex* pindexPrev,
                        bool fCheckPOW,
                        bool fCheckMerkleRoot)
 {
     AssertLockHeld(cs_main);
-    assert(pindexPrev && pindexPrev == chainstate.m_chain.Tip());
+    CBlockIndex* tip{Assert(chainstate.m_chain.Tip())};
     CCoinsViewCache viewNew(&chainstate.CoinsTip());
     uint256 block_hash(block.GetHash());
     CBlockIndex indexDummy(block);

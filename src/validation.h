@@ -388,7 +388,6 @@ bool TestBlockValidity(BlockValidationState& state,
                        const CChainParams& chainparams,
                        Chainstate& chainstate,
                        const CBlock& block,
-                       CBlockIndex* pindexPrev,
                        bool fCheckPOW = true,
                        bool fCheckMerkleRoot = true) EXCLUSIVE_LOCKS_REQUIRED(cs_main);
 

@@ -174,7 +174,7 @@ std::unique_ptr<CBlockTemplate> BlockAssembler::CreateNewBlock()
     pblock->nNonce         = 0;
 
     BlockValidationState state;
-    if (m_options.test_block_validity && !TestBlockValidity(state, chainparams, m_chainstate, *pblock, pindexPrev,
+    if (m_options.test_block_validity && !TestBlockValidity(state, chainparams, m_chainstate, *pblock,
                                                             /*fCheckPOW=*/false, /*fCheckMerkleRoot=*/false)) {
         throw std::runtime_error(strprintf("%s: TestBlockValidity failed: %s", __func__, state.ToString()));
     }

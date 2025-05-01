@@ -388,7 +388,7 @@ static RPCHelpMan generateblock()
         RegenerateCommitments(block, chainman);
 
         BlockValidationState state;
-        if (!TestBlockValidity(state, chainman.GetParams(), chainman.ActiveChainstate(), block, chainman.m_blockman.LookupBlockIndex(block.hashPrevBlock), /*fCheckPOW=*/false, /*fCheckMerkleRoot=*/false)) {
+        if (!TestBlockValidity(state, chainman.GetParams(), chainman.ActiveChainstate(), block, /*fCheckPOW=*/false, /*fCheckMerkleRoot=*/false)) {
             throw JSONRPCError(RPC_VERIFY_ERROR, strprintf("TestBlockValidity failed: %s", state.ToString()));
         }
     }
@@ -746,7 +746,7 @@ static RPCHelpMan getblocktemplate()
                 return "inconclusive-not-best-prevblk";
             }
             BlockValidationState state;
-            TestBlockValidity(state, chainman.GetParams(), chainman.ActiveChainstate(), block, chainman.m_blockman.LookupBlockIndex(block.hashPrevBlock), /*fCheckPOW=*/false, /*fCheckMerkleRoot=*/true);
+            TestBlockValidity(state, chainman.GetParams(), chainman.ActiveChainstate(), block, /*fCheckPOW=*/false, /*fCheckMerkleRoot=*/true);
             return BIP22ValidationResult(state);
         }
 
