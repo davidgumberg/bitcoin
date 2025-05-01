@@ -297,7 +297,7 @@ void ChainTestingSetup::LoadVerifyActivateChainstate()
 {
     auto& chainman{*Assert(m_node.chainman)};
     node::ChainstateLoadOptions options;
-    options.mempool = Assert(m_node.mempool.get());
+    options.mempool = Assert(m_node.mempool);
     options.coins_db_in_memory = m_coins_db_in_memory;
     options.wipe_chainstate_db = m_args.GetBoolArg("-reindex", false) || m_args.GetBoolArg("-reindex-chainstate", false);
     options.prune = chainman.m_blockman.IsPruneMode();
@@ -326,7 +326,7 @@ CTxMemPool& ChainTestingSetup::ReplaceMempool()
     m_node.mempool = std::make_unique<CTxMemPool>(MemPoolOptionsForTest(m_node), error);
     Assert(error.empty());
     auto& dummy_chainstate{static_cast<DummyChainState&>(m_node.chainman->ActiveChainstate())};
-    dummy_chainstate.SetMempool(m_node.mempool.get());
+    dummy_chainstate.SetMempool(m_node.mempool);
     return *m_node.mempool;
 }
 

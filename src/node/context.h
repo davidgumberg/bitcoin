@@ -65,7 +65,7 @@ struct NodeContext {
     util::SignalInterrupt* shutdown_signal{nullptr};
     std::unique_ptr<AddrMan> addrman;
     std::unique_ptr<CConnman> connman;
-    std::unique_ptr<CTxMemPool> mempool;
+    std::shared_ptr<CTxMemPool> mempool;
     std::unique_ptr<const NetGroupManager> netgroupman;
     std::unique_ptr<CBlockPolicyEstimator> fee_estimator;
     std::unique_ptr<PeerManager> peerman;

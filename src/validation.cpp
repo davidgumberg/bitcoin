@@ -1961,7 +1961,7 @@ void CoinsViews::InitCache()
 }
 
 Chainstate::Chainstate(
-    CTxMemPool* mempool,
+    std::shared_ptr<CTxMemPool> mempool,
     BlockManager& blockman,
     ChainstateManager& chainman,
     std::optional<uint256> from_snapshot_blockhash)
@@ -5654,7 +5654,7 @@ std::vector<Chainstate*> ChainstateManager::GetAll()
     return out;
 }
 
-Chainstate& ChainstateManager::InitializeChainstate(CTxMemPool* mempool)
+Chainstate& ChainstateManager::InitializeChainstate(std::shared_ptr<CTxMemPool> mempool)
 {
     AssertLockHeld(::cs_main);
     assert(!m_ibd_chainstate);

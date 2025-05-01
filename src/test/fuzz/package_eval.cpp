@@ -213,7 +213,7 @@ FUZZ_TARGET(ephemeral_package_eval, .init = initialize_tx_pool)
     auto tx_pool_{MakeEphemeralMempool(node)};
     MockedTxPool& tx_pool = *static_cast<MockedTxPool*>(tx_pool_.get());
 
-    chainstate.SetMempool(&tx_pool);
+    chainstate.SetMempool(std::shared_ptr<CTxMemPool>(&tx_pool));
 
     LIMITED_WHILE(fuzzed_data_provider.remaining_bytes() > 0, 300)
     {
@@ -341,7 +341,7 @@ FUZZ_TARGET(ephemeral_package_eval, .init = initialize_tx_pool)
 
     node.validation_signals->UnregisterSharedValidationInterface(outpoints_updater);
 
-    chainstate.SetMempool(g_setup->m_node.mempool.get());
+    chainstate.SetMempool(g_setup->m_node.mempool);
 
     WITH_LOCK(::cs_main, tx_pool.check(chainstate.CoinsTip(), chainstate.m_chain.Height() + 1));
 }
@@ -370,7 +370,7 @@ FUZZ_TARGET(tx_package_eval, .init = initialize_tx_pool)
     auto tx_pool_{MakeMempool(fuzzed_data_provider, node)};
     MockedTxPool& tx_pool = *static_cast<MockedTxPool*>(tx_pool_.get());
 
-    chainstate.SetMempool(&tx_pool);
+    chainstate.SetMempool(std::shared_ptr<CTxMemPool>(&tx_pool));
 
     LIMITED_WHILE(fuzzed_data_provider.remaining_bytes() > 0, 300)
     {
@@ -538,7 +538,7 @@ FUZZ_TARGET(tx_package_eval, .init = initialize_tx_pool)
 
     node.validation_signals->UnregisterSharedValidationInterface(outpoints_updater);
 
-    chainstate.SetMempool(g_setup->m_node.mempool.get());
+    chainstate.SetMempool(g_setup->m_node.mempool);
 
     WITH_LOCK(::cs_main, tx_pool.check(chainstate.CoinsTip(), chainstate.m_chain.Height() + 1));
 }

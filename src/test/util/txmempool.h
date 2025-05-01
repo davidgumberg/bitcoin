@@ -20,7 +20,7 @@ CTxMemPool::Options MemPoolOptionsForTest(const node::NodeContext& node);
 class DummyChainState final : public Chainstate
 {
 public:
-    void SetMempool(CTxMemPool* mempool)
+    void SetMempool(std::shared_ptr<CTxMemPool> mempool)
     {
         m_mempool = mempool;
     }

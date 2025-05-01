@@ -1288,7 +1288,7 @@ static ChainstateLoadResult InitAndLoadChainstate(
         }
     };
     node::ChainstateLoadOptions options;
-    options.mempool = Assert(node.mempool.get());
+    options.mempool = Assert(node.mempool);
     options.wipe_chainstate_db = do_reindex || do_reindex_chainstate;
     options.prune = chainman.m_blockman.IsPruneMode();
     options.check_blocks = args.GetIntArg("-checkblocks", DEFAULT_CHECKBLOCKS);
@@ -1842,7 +1842,7 @@ bool AppInitMain(NodeContext& node, interfaces::BlockAndHeaderTipInfo* tip_info)
             return;
         }
         // Load mempool from disk
-        if (auto* pool{chainman.ActiveChainstate().GetMempool()}) {
+        if (auto pool{chainman.ActiveChainstate().GetMempool()}) {
             LoadMempool(*pool, ShouldPersistMempool(args) ? MempoolPath(args) : fs::path{}, chainman.ActiveChainstate(), {});
             pool->SetLoadTried(!chainman.m_interrupt);
         }

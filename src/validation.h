@@ -513,7 +513,7 @@ protected:
 
     //! Optional mempool that is kept in sync with the chain.
     //! Only the active chainstate has a mempool.
-    CTxMemPool* m_mempool;
+    std::shared_ptr<CTxMemPool> m_mempool;
 
     //! Manages the UTXO set, which is a reflection of the contents of `m_chain`.
     std::unique_ptr<CoinsViews> m_coins_views;
@@ -545,7 +545,7 @@ public:
     ChainstateManager& m_chainman;
 
     explicit Chainstate(
-        CTxMemPool* mempool,
+        std::shared_ptr<CTxMemPool> mempool,
         node::BlockManager& blockman,
         ChainstateManager& chainman,
         std::optional<uint256> from_snapshot_blockhash = std::nullopt);
@@ -623,7 +623,7 @@ public:
     }
 
     //! @returns A pointer to the mempool.
-    CTxMemPool* GetMempool()
+    std::shared_ptr<CTxMemPool> GetMempool()
     {
         return m_mempool;
     }
@@ -1071,7 +1071,7 @@ public:
     //!
     //! @param[in] mempool              The mempool to pass to the chainstate
     //                                  constructor
-    Chainstate& InitializeChainstate(CTxMemPool* mempool) EXCLUSIVE_LOCKS_REQUIRED(::cs_main);
+    Chainstate& InitializeChainstate(std::shared_ptr<CTxMemPool> mempool) EXCLUSIVE_LOCKS_REQUIRED(::cs_main);
 
     //! Get all chainstates currently being used.
     std::vector<Chainstate*> GetAll();
