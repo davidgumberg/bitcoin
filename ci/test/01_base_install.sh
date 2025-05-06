@@ -44,6 +44,10 @@ elif [ "$CI_OS_NAME" != "macos" ]; then
   ${CI_RETRY_EXE} bash -c "apt-get install --no-install-recommends --no-upgrade -y $PACKAGES $CI_BASE_PACKAGES"
 fi
 
+if [[ "${RUN_SYMBOL_CHECKS}" == "true" ]]; then
+  PIP_PACKAGES="${PIP_PACKAGES} lief==0.16.5"
+fi
+
 if [ -n "$PIP_PACKAGES" ]; then
   # shellcheck disable=SC2086
   ${CI_RETRY_EXE} pip3 install --user $PIP_PACKAGES
