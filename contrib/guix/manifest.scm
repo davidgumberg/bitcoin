@@ -158,7 +158,7 @@ chain for " target " development."))
 (define-public python-lief
   (package
     (name "python-lief")
-    (version "0.13.2")
+    (version "0.16.5")
     (source (origin
               (method git-fetch)
               (uri (git-reference
