@@ -164,6 +164,13 @@ security-check.py
 
 Perform basic security checks on a series of executables.
 
+Example usage:
+
+```bash
+find ./build/bin/ | xargs python3 contrib/devtools/security-check.py
+```
+
+
 symbol-check.py
 ===============
 
