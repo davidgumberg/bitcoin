@@ -185,17 +185,17 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Locate MSBuild and add to PATH
+      - name: Set up VS Developer Prompt
         shell: pwsh
         run: |
           $vswherePath = "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe"
-          $msbuildPath = & "$vswherePath" -latest -requires Microsoft.Component.MSBuild -find MSBuild\**\Bin\MSBuild.exe
-          if (-not $msbuildPath) {
-            throw "MSBuild not found"
+          $installationPath = & 'C:\Program Files (x86)\Microsoft Visual Studio\Installer\vswhere.exe' -latest -property installationPath
+          if ($installationPath -and (test-path "$installationPath\Common7\Tools\vsdevcmd.bat")) {
+            & "${env:COMSPEC}" /s /c "`"$installationPath\Common7\Tools\vsdevcmd.bat`" -no_logo && set" | foreach-object {
+              $name, $value = $_ -split '=', 2
+              echo "$name=$value" >> $env:GITHUB_ENV
+            }
           }
-          $msbuildDir = Split-Path $msbuildPath -Parent
-          Write-Host "MSBuild found at $msbuildPath"
-          "$msbuildDir" | Out-File -FilePath $env:GITHUB_PATH -Append
 
       - name: Get tool information
         shell: pwsh
