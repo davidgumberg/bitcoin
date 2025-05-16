@@ -373,7 +373,11 @@ jobs:
         run: |
           mt.exe -nologo -inputresource:bin\bitcoind.exe -out:bitcoind.manifest
           Get-Content bitcoind.manifest
-          mt.exe -nologo -inputresource:bin\bitcoind.exe -validate_manifest
+
+          Get-ChildItem -Filter "bin\*.exe" | ForEach-Object {
+            echo "Checking $($_.Name)"
+            mt.exe -nologo -inputresource:$_.FullName -validate_manifest
+          }
 
       - name: Run unit tests
         # Can't use ctest here like other jobs as we don't have a CMake build tree.
