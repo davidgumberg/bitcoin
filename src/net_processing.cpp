@@ -3967,7 +3967,7 @@ void PeerManagerImpl::ProcessMessage(Peer& peer, CNode& pfrom, const std::string
         if(!pfrom.IsManualConn()) {
             return;
         }
-        bool sendcmpct_hb{0};
+        uint8_t sendcmpct_hb{0};
         uint64_t sendcmpct_version{0};
         vRecv >> sendcmpct_hb >> sendcmpct_version;
 
@@ -4595,6 +4595,12 @@ void PeerManagerImpl::ProcessMessage(Peer& peer, CNode& pfrom, const std::string
                 LogDebug(BCLog::CMPCTBLOCK, "%s sent us a compact block despite never having sent us a SENDCMPCT!", pfrom.LogPeer());
                 return;
             }
+        }
+
+        // Ignore cmpctblock received from non-manual connection.
+        if (!pfrom.IsManualConn()) {
+            LogDebug(BCLog::NET, "Unexpected cmpctblock message received from non-manual peer %d\n", pfrom.GetId());
+            return;
         }
 
         // Ignore cmpctblock received from non-manual connection.
