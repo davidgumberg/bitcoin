@@ -1251,6 +1251,11 @@ void PeerManagerImpl::MaybeSetPeerAsAnnouncingHeaderAndIDs(NodeId nodeid)
 {
     AssertLockHeld(cs_main);
 
+    // If not a manual connection, return early.
+    if (m_connman.ForNode(nodeid, [](CNode* pnode) {return !pnode->IsManualConn();})) {
+        return;
+    }
+
     // When in -blocksonly mode, never request high-bandwidth mode from peers. Our
     // mempool will not contain the transactions necessary to reconstruct the
     // compact block.
@@ -1298,6 +1303,8 @@ void PeerManagerImpl::MaybeSetPeerAsAnnouncingHeaderAndIDs(NodeId nodeid)
             });
             lNodesAnnouncingHeaderAndIDs.pop_front();
         }
+
+        LogDebug(BCLog::CMPCTBLOCK, "Adding peer %d as a high bandwidth compact-block peer, and sending them a SENDCMPCT to let them know they've been selected.", pfrom->GetId());
         MakeAndPushMessage(*pfrom, NetMsgType::SENDCMPCT, /*high_bandwidth=*/true, /*version=*/CMPCTBLOCKS_VERSION);
         // save BIP152 bandwidth state: we select peer to be high-bandwidth
         pfrom->m_bip152_highbandwidth_to = true;
@@ -1569,6 +1576,7 @@ void PeerManagerImpl::InitializeNode(const CNode& node, ServiceFlags our_service
     {
         LOCK(m_peer_mutex);
         m_peer_map.emplace_hint(m_peer_map.end(), nodeid, peer);
+
     }
 }
 
@@ -3729,6 +3737,14 @@ void PeerManagerImpl::ProcessMessage(CNode& pfrom, const std::string& msg_type, 
         }
 
         pfrom.fSuccessfullyConnected = true;
+        if (pfrom.IsManualConn()) {
+            {
+                LOCK(cs_main);
+                CNodeState* nodestate = State(pfrom.GetId());
+                nodestate->m_provides_cmpctblocks = true;
+                MaybeSetPeerAsAnnouncingHeaderAndIDs(pfrom.GetId());
+            }
+        }
         return;
     }
 
@@ -3738,6 +3754,9 @@ void PeerManagerImpl::ProcessMessage(CNode& pfrom, const std::string& msg_type, 
     }
 
     if (msg_type == NetMsgType::SENDCMPCT) {
+        if(!pfrom.IsManualConn()) {
+            return;
+        }
         bool sendcmpct_hb{false};
         uint64_t sendcmpct_version{0};
         vRecv >> sendcmpct_hb >> sendcmpct_version;
@@ -4345,6 +4364,12 @@ void PeerManagerImpl::ProcessMessage(CNode& pfrom, const std::string& msg_type, 
         // Ignore cmpctblock received while importing
         if (m_chainman.m_blockman.LoadingBlocks()) {
             LogDebug(BCLog::NET, "Unexpected cmpctblock message received from peer %d\n", pfrom.GetId());
+            return;
+        }
+
+        // Ignore cmpctblock received from non-manual connection.
+        if (!pfrom.IsManualConn()) {
+            LogDebug(BCLog::NET, "Unexpected cmpctblock message received from non-manual peer %d\n", pfrom.GetId());
             return;
         }
 
