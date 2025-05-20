@@ -4357,6 +4357,11 @@ void PeerManagerImpl::ProcessMessage(CNode& pfrom, const std::string& msg_type, 
             return;
         }
 
+        // Ignore cmpctblock received from non-manual connection.
+        if (!pfrom.IsManualConn()) {
+            LogDebug(BCLog::NET, "Unexpected cmpctblock message received from non-manual peer %d\n", pfrom.GetId());
+        }
+
         CBlockHeaderAndShortTxIDs cmpctblock;
         vRecv >> cmpctblock;
 
