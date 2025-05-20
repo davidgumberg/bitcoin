@@ -1371,6 +1371,11 @@ void PeerManagerImpl::MaybeSetPeerAsAnnouncingHeaderAndIDs(NodeId nodeid)
 {
     AssertLockHeld(cs_main);
 
+    // If not a manual connection, return early.
+    if (m_connman.ForNode(nodeid, [](CNode* pnode) {return !pnode->IsManualConn();})) {
+        return;
+    }
+
     // When in -blocksonly mode, never request high-bandwidth mode from peers. Our
     // mempool will not contain the transactions necessary to reconstruct the
     // compact block.
@@ -1716,6 +1721,7 @@ void PeerManagerImpl::InitializeNode(const CNode& node, ServiceFlags our_service
     {
         LOCK(m_peer_mutex);
         m_peer_map.emplace_hint(m_peer_map.end(), nodeid, peer);
+
     }
 }
 
@@ -4153,6 +4159,14 @@ void PeerManagerImpl::ProcessMessage(Peer& peer, CNode& pfrom, const std::string
         }
 
         pfrom.fSuccessfullyConnected = true;
+        if (pfrom.IsManualConn()) {
+            {
+                LOCK(cs_main);
+                CNodeState* nodestate = State(pfrom.GetId());
+                nodestate->m_provides_cmpctblocks = true;
+                MaybeSetPeerAsAnnouncingHeaderAndIDs(pfrom.GetId());
+            }
+        }
         return;
     }
 
@@ -4162,7 +4176,10 @@ void PeerManagerImpl::ProcessMessage(Peer& peer, CNode& pfrom, const std::string
     }
 
     if (msg_type == NetMsgType::SENDCMPCT) {
-        uint8_t sendcmpct_hb{0};
+        if(!pfrom.IsManualConn()) {
+            return;
+        }
+        bool sendcmpct_hb{0};
         uint64_t sendcmpct_version{0};
         vRecv >> sendcmpct_hb >> sendcmpct_version;
 
@@ -4797,6 +4814,18 @@ void PeerManagerImpl::ProcessMessage(Peer& peer, CNode& pfrom, const std::string
                 LogDebug(BCLog::CMPCTBLOCK, "%s sent us a compact block despite never having sent us a SENDCMPCT!", pfrom.LogPeer());
                 return;
             }
+        }
+
+        // Ignore cmpctblock received from non-manual connection.
+        if (!pfrom.IsManualConn()) {
+            LogDebug(BCLog::NET, "Unexpected cmpctblock message received from non-manual peer %d\n", pfrom.GetId());
+            return;
+        }
+
+        // Ignore cmpctblock received from non-manual connection.
+        if (!pfrom.IsManualConn()) {
+            LogDebug(BCLog::NET, "Unexpected cmpctblock message received from non-manual peer %d\n", pfrom.GetId());
+            return;
         }
 
         CBlockHeaderAndShortTxIDs cmpctblock;
