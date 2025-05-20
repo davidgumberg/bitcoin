@@ -1260,6 +1260,9 @@ void PeerManagerImpl::MaybeSetPeerAsAnnouncingHeaderAndIDs(NodeId nodeid)
 
     CNodeState* nodestate = State(nodeid);
     PeerRef peer{GetPeerRef(nodeid)};
+    // Because only manual connections have `m_provides_cmpctblocks == true`, every other connection gets returned here,
+    // and never gets a SENDCMPCT from us, consequently, our peers always have m_requested_hb_cmpctblocks = false for us, so
+    // they shouldn't send us cmpct block announcements.
     if (!nodestate || !nodestate->m_provides_cmpctblocks) {
         // Don't request compact blocks if the peer has not signalled support
         return;
@@ -3755,7 +3758,9 @@ void PeerManagerImpl::ProcessMessage(CNode& pfrom, const std::string& msg_type, 
 
         LOCK(cs_main);
         CNodeState* nodestate = State(pfrom.GetId());
-        nodestate->m_provides_cmpctblocks = true;
+        if (pfrom.IsManualConn()) {
+            nodestate->m_provides_cmpctblocks = true;
+        }
         nodestate->m_requested_hb_cmpctblocks = sendcmpct_hb;
         // save whether peer selects us as BIP152 high-bandwidth peer
         // (receiving sendcmpct(1) signals high-bandwidth, sendcmpct(0) low-bandwidth)
