@@ -224,6 +224,7 @@ jobs:
       - name: Get tool information
         shell: pwsh
         run: |
+          curl.exe -badoption
           cmake -version | Tee-Object -FilePath "cmake_version"
           Write-Output "---"
           msbuild -version | Tee-Object -FilePath "msbuild_version"
