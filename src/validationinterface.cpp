@@ -79,14 +79,19 @@ public:
 
     template<typename F> void Iterate(F&& f) EXCLUSIVE_LOCKS_REQUIRED(!m_mutex)
     {
-        WAIT_LOCK(m_mutex, lock);
-        for (auto it = m_list.begin(); it != m_list.end();) {
-            ++it->count;
+        auto it{WITH_LOCK(m_mutex, return m_list.begin())};
+        while (true) {
             {
-                REVERSE_LOCK(lock);
-                f(*it->callbacks);
+                LOCK(m_mutex);
+                if (it == m_list.end()) break;
+                ++it->count;
             }
-            it = --it->count ? std::next(it) : m_list.erase(it);
+            f(*it->callbacks);
+            {
+                LOCK(m_mutex);
+                it = --it->count ? std::next(it) : m_list.erase(it);
+            }
+
         }
     }
 };
