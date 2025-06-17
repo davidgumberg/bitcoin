@@ -2612,7 +2612,11 @@ void PeerManagerImpl::SendBlockTransactions(CNode& pfrom, Peer& peer, const CBlo
     if (LogAcceptCategory(BCLog::CMPCTBLOCK, BCLog::Level::Debug)) {
         uint32_t tx_requested_size{0};
         for (const auto& tx : resp.txn) tx_requested_size += tx->ComputeTotalSize();
-        LogDebug(BCLog::CMPCTBLOCK, "Peer %d sent us a GETBLOCKTXN for block %s, sending a BLOCKTXN with %u txns. (%u bytes)\n", pfrom.GetId(), block.GetHash().ToString(), resp.txn.size(), tx_requested_size);
+
+        LogDebug(BCLog::CMPCTBLOCK, "Peer %d sent us a GETBLOCKTXN for block %s, sending a BLOCKTXN with %u txns: (%u bytes)\n", pfrom.GetId(), block.GetHash().ToString(), resp.txn.size(), tx_requested_size);
+        for(const auto& txn : resp.txn) {
+            LogDebug(BCLog::CMPCTBLOCK, "    - txid: %s", txn->GetHash().ToString());
+        }
     }
     MakeAndPushMessage(pfrom, NetMsgType::BLOCKTXN, resp);
 }
