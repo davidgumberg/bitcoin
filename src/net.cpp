@@ -3872,14 +3872,23 @@ void CConnman::PushMessage(CNode* pnode, CSerializedNetMsg&& msg)
         CaptureMessage(pnode->addr, msg.m_type, msg.data, /*is_incoming=*/false);
     }
 
-    TRACEPOINT(net, outbound_message,
-        pnode->GetId(),
-        pnode->m_addr_name.c_str(),
-        pnode->ConnectionTypeAsString().c_str(),
-        msg.m_type.c_str(),
-        msg.data.size(),
-        msg.data.data()
-    );
+#ifdef __linux__
+    {
+        LOCK(pnode->m_sock_mutex);
+        if (pnode->m_sock) {
+            LogDebug(BCLog::NET, "    - Max send per-rtt: %s bytes", pnode->GetTCPMaxSend());
+            TRACEPOINT(net, outbound_message,
+                pnode->GetId(),
+                pnode->m_addr_name.c_str(),
+                pnode->ConnectionTypeAsString().c_str(),
+                msg.m_type.c_str(),
+                msg.data.size(),
+                msg.data.data(),
+                pnode->GetTCPInfo()
+            );
+        }
+    }
+#endif
 
     size_t nBytesSent = 0;
     {

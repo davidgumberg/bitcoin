@@ -5043,14 +5043,22 @@ bool PeerManagerImpl::ProcessMessages(CNode* pfrom, std::atomic<bool>& interrupt
     CNetMessage& msg{poll_result->first};
     bool fMoreWork = poll_result->second;
 
-    TRACEPOINT(net, inbound_message,
-        pfrom->GetId(),
-        pfrom->m_addr_name.c_str(),
-        pfrom->ConnectionTypeAsString().c_str(),
-        msg.m_type.c_str(),
-        msg.m_recv.size(),
-        msg.m_recv.data()
-    );
+#ifdef __linux__
+    {
+        LOCK(pfrom->m_sock_mutex);
+        if (pfrom->m_sock) {
+            TRACEPOINT(net, inbound_message,
+                pfrom->GetId(),
+                pfrom->m_addr_name.c_str(),
+                pfrom->ConnectionTypeAsString().c_str(),
+                msg.m_type.c_str(),
+                msg.m_recv.size(),
+                msg.m_recv.data(),
+                pfrom->GetTCPInfo()
+            );
+        }
+    }
+#endif
 
     if (m_opts.capture_messages) {
         CaptureMessage(pfrom->addr, msg.m_type, MakeUCharSpan(msg.m_recv), /*is_incoming=*/true);
