@@ -982,6 +982,18 @@ public:
         WITH_LOCK(m_sock_mutex, assert(!m_sock->GetSockOpt(IPPROTO_TCP, TCP_INFO, &m_tcp_info, &m_tcp_info_len)));
         return &m_tcp_info;
     }
+
+    uint32_t GetTCPMaxSend() EXCLUSIVE_LOCKS_REQUIRED(!m_sock_mutex)
+    {
+        MaybeCheckNotHeld(m_sock_mutex);
+        const struct tcp_info* info = GetTCPInfo();
+        // congestion send window (# of segments) * mss (max segment size)
+        uint32_t cwnd_bytes = info->tcpi_snd_cwnd * info->tcpi_snd_mss;
+        // our peer's advertised receive window in bytes
+        uint32_t peer_rwnd_bytes = info->tcpi_snd_wnd;
+        // get the smaller one
+        return std::min(cwnd_bytes, peer_rwnd_bytes);
+    }
 #endif
 
 private:

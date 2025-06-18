@@ -3873,6 +3873,7 @@ void CConnman::PushMessage(CNode* pnode, CSerializedNetMsg&& msg)
     }
 
 #ifdef __linux__
+    LogDebug(BCLog::NET, "    - Max send per-rtt: %s bytes", pnode->GetTCPMaxSend());
     TRACEPOINT(net, outbound_message,
         pnode->GetId(),
         pnode->m_addr_name.c_str(),
