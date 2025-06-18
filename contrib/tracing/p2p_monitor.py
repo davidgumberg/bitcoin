@@ -24,6 +24,7 @@ from bcc import BPF, USDT
 # a sandboxed Linux kernel VM.
 program = """
 #include <uapi/linux/ptrace.h>
+#include <uapi/linux/tcp.h>
 
 // Tor v3 addresses are 62 chars + 6 chars for the port (':12345').
 // I2P addresses are 60 chars + 6 chars for the port (':12345').
@@ -38,6 +39,7 @@ struct p2p_message
     char    peer_conn_type[MAX_PEER_CONN_TYPE_LENGTH];
     char    msg_type[MAX_MSG_TYPE_LENGTH];
     u64     msg_size;
+    struct tcp_info peer_tcp_info;
 };
 
 
@@ -54,9 +56,10 @@ int trace_inbound_message(struct pt_regs *ctx) {
     bpf_probe_read_user_str(&msg.peer_addr, sizeof(msg.peer_addr), paddr);
     bpf_usdt_readarg(3, ctx, &pconn_type);
     bpf_probe_read_user_str(&msg.peer_conn_type, sizeof(msg.peer_conn_type), pconn_type);
-    bpf_usdt_readarg(4, ctx, &pconn_type);
+    bpf_usdt_readarg(4, ctx, &msg.peer_tcp_info);
+    bpf_usdt_readarg(5, ctx, &pmsg_type);
     bpf_probe_read_user_str(&msg.msg_type, sizeof(msg.msg_type), pmsg_type);
-    bpf_usdt_readarg(5, ctx, &msg.msg_size);
+    bpf_usdt_readarg(6, ctx, &msg.msg_size);
 
     inbound_messages.perf_submit(ctx, &msg, sizeof(msg));
     return 0;
@@ -71,9 +74,10 @@ int trace_outbound_message(struct pt_regs *ctx) {
     bpf_probe_read_user_str(&msg.peer_addr, sizeof(msg.peer_addr), paddr);
     bpf_usdt_readarg(3, ctx, &pconn_type);
     bpf_probe_read_user_str(&msg.peer_conn_type, sizeof(msg.peer_conn_type), pconn_type);
-    bpf_usdt_readarg(4, ctx, &pconn_type);
+    bpf_usdt_readarg(4, ctx, &msg.peer_tcp_info);
+    bpf_usdt_readarg(5, ctx, &pmsg_type);
     bpf_probe_read_user_str(&msg.msg_type, sizeof(msg.msg_type), pmsg_type);
-    bpf_usdt_readarg(5, ctx, &msg.msg_size);
+    bpf_usdt_readarg(6, ctx, &msg.msg_size);
 
     outbound_messages.perf_submit(ctx, &msg, sizeof(msg));
     return 0;

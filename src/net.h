@@ -19,6 +19,7 @@
 #include <netaddress.h>
 #include <netbase.h>
 #include <netgroup.h>
+#include <netinet/tcp.h>
 #include <node/connection_types.h>
 #include <node/protocol_version.h>
 #include <policy/feerate.h>
@@ -968,6 +969,15 @@ public:
     void PongReceived(std::chrono::microseconds ping_time) {
         m_last_ping_time = ping_time;
         m_min_ping_time = std::min(m_min_ping_time.load(), ping_time);
+    }
+
+    struct tcp_info GetTCPInfo() EXCLUSIVE_LOCKS_REQUIRED(!m_sock_mutex)
+    {
+        MaybeCheckNotHeld(m_sock_mutex);
+        struct tcp_info info;
+        socklen_t info_len = sizeof(info);
+        WITH_LOCK(m_sock_mutex, assert(!m_sock->GetSockOpt(IPPROTO_TCP, TCP_INFO, &info, &info_len)));
+        return info;
     }
 
 private:

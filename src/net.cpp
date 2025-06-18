@@ -3876,6 +3876,7 @@ void CConnman::PushMessage(CNode* pnode, CSerializedNetMsg&& msg)
         pnode->GetId(),
         pnode->m_addr_name.c_str(),
         pnode->ConnectionTypeAsString().c_str(),
+        pnode->GetTCPInfo(),
         msg.m_type.c_str(),
         msg.data.size(),
         msg.data.data()

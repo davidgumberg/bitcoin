@@ -5047,6 +5047,7 @@ bool PeerManagerImpl::ProcessMessages(CNode* pfrom, std::atomic<bool>& interrupt
         pfrom->GetId(),
         pfrom->m_addr_name.c_str(),
         pfrom->ConnectionTypeAsString().c_str(),
+        pfrom->GetTCPInfo(),
         msg.m_type.c_str(),
         msg.m_recv.size(),
         msg.m_recv.data()
