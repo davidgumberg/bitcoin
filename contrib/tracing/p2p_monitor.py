@@ -45,9 +45,12 @@ struct p2p_message
 struct tcp_info_partial
 {
     u64 peer_id;
+    u8  tcpi_ca_state;
     u32 tcpi_snd_cwnd;
     u32 tcpi_snd_mss;
     u32 tcpi_snd_wnd;
+    u32 tcpi_lost;
+    u32 tcpi_total_retrans;
 };
 
 // Two BPF perf buffers for pushing data (here P2P messages) to user space.
@@ -76,10 +79,13 @@ int trace_inbound_message(struct pt_regs *ctx) {
     bpf_probe_read_user(&peer_tcp_info, sizeof(peer_tcp_info), info_type);
 
     struct tcp_info_partial peer_tcp_info_partial = {
-        .peer_id =          msg.peer_id,
-        .tcpi_snd_cwnd =    peer_tcp_info.tcpi_snd_cwnd,
-        .tcpi_snd_mss =     peer_tcp_info.tcpi_snd_mss,
-        .tcpi_snd_wnd =     peer_tcp_info.tcpi_snd_wnd
+        .peer_id =              msg.peer_id,
+        .tcpi_ca_state =        peer_tcp_info.tcpi_ca_state,
+        .tcpi_snd_cwnd =        peer_tcp_info.tcpi_snd_cwnd,
+        .tcpi_snd_mss =         peer_tcp_info.tcpi_snd_mss,
+        .tcpi_snd_wnd =         peer_tcp_info.tcpi_snd_wnd,
+        .tcpi_lost =            peer_tcp_info.tcpi_lost,
+        .tcpi_total_retrans =   peer_tcp_info.tcpi_total_retrans
     };
     peer_tcp_infos.perf_submit(ctx, &peer_tcp_info_partial, sizeof(peer_tcp_info_partial));
 
@@ -107,10 +113,13 @@ int trace_outbound_message(struct pt_regs *ctx) {
     bpf_probe_read_user(&peer_tcp_info, sizeof(peer_tcp_info), info_type);
 
     struct tcp_info_partial peer_tcp_info_partial = {
-        .peer_id =          msg.peer_id,
-        .tcpi_snd_cwnd =    peer_tcp_info.tcpi_snd_cwnd,
-        .tcpi_snd_mss =     peer_tcp_info.tcpi_snd_mss,
-        .tcpi_snd_wnd =     peer_tcp_info.tcpi_snd_wnd
+        .peer_id =              msg.peer_id,
+        .tcpi_ca_state =        peer_tcp_info.tcpi_ca_state,
+        .tcpi_snd_cwnd =        peer_tcp_info.tcpi_snd_cwnd,
+        .tcpi_snd_mss =         peer_tcp_info.tcpi_snd_mss,
+        .tcpi_snd_wnd =         peer_tcp_info.tcpi_snd_wnd,
+        .tcpi_lost =            peer_tcp_info.tcpi_lost,
+        .tcpi_total_retrans =   peer_tcp_info.tcpi_total_retrans
     };
     peer_tcp_infos.perf_submit(ctx, &peer_tcp_info_partial, sizeof(peer_tcp_info_partial));
 
@@ -144,6 +153,9 @@ class Peer:
     total_outbound_bytes = 0
     send_window_bytes = 0
     send_mss = 0
+    lost_packets = 0
+    retrans_packets = 0
+    ca_state = ""
 
     def __init__(self, id, address, connection_type):
         self.id = id
@@ -162,9 +174,13 @@ class Peer:
             self.total_outbound_bytes += message.size
             self.total_outbound_msgs += 1
 
-    def add_stats(self, snd_cwnd, snd_mss, snd_wnd):
+    def add_stats(self, snd_cwnd, snd_mss, snd_wnd, lost, retrans, ca_state):
         self.send_window_bytes = min(snd_cwnd * snd_mss, snd_wnd)
         self.send_mss = snd_mss
+        self.lost_packets = lost
+        self.retrans_packets = retrans
+        # https://github.com/torvalds/linux/blob/52da431bf03b5506203bca27fe14a97895c80faf/include/uapi/linux/tcp.h#L189-L227
+        self.ca_state = ['Open', 'Disorder', 'CWR', 'Recovery', 'Loss'][ca_state]
 
 def main(pid):
     peers = dict()
@@ -212,7 +228,8 @@ def main(pid):
 
         event = bpf["peer_tcp_infos"].event(data)
         if event.peer_id in peers:
-            peers[event.peer_id].add_stats(event.tcpi_snd_cwnd, event.tcpi_snd_mss, event.tcpi_snd_wnd)
+            peers[event.peer_id].add_stats(event.tcpi_snd_cwnd, event.tcpi_snd_mss, event.tcpi_snd_wnd,
+            event.tcpi_lost, event.tcpi_total_retrans, event.tcpi_ca_state)
 
     # BCC: add handlers to the inbound and outbound perf buffers
     bpf["inbound_messages"].open_perf_buffer(handle_inbound)
@@ -268,22 +285,22 @@ def render(screen, peers, cur_list_pos, scroll, ROWS_AVALIABLE_FOR_LIST, info_pa
 
     This code is unrelated to USDT, BCC and BPF.
     """
-    header_format = "%6s  %-21s  %-21s  %-22s  %-45s  %-12s  %-11s"
-    row_format = "%6s  %-5d %9d bytes  %-5d %9d bytes  %-22s  %-45s  %-6d bytes  %-5d bytes"
+    header_format = "%6s  %-21s  %-21s  %-22s  %-45s  %-8s  %-12s  %-11s  %-8s"
+    row_format = "%6s  %-5d %9d bytes  %-5d %9d bytes  %-22s  %-45s  %-8d  %-6d bytes  %-5d bytes %8s"
 
     screen.addstr(0, 1, (" P2P Message Monitor "), curses.A_REVERSE)
     screen.addstr(
         1, 0, (" Navigate with UP/DOWN or J/K and select a peer with ENTER or SPACE to see individual P2P messages"), curses.A_NORMAL)
     screen.addstr(3, 0,
-                  header_format % ("PEER", "OUTBOUND", "INBOUND", "TYPE", "ADDR", "TCP_WINDOW", "TCP_MSS"), curses.A_BOLD | curses.A_UNDERLINE)
+                  header_format % ("PEER", "OUTBOUND", "INBOUND", "TYPE", "ADDR", "TCP RETR", "TCP_WINDOW", "TCP_MSS", "CA_STATE"), curses.A_BOLD | curses.A_UNDERLINE)
     peer_list = sorted(peers.keys())[scroll:ROWS_AVALIABLE_FOR_LIST+scroll]
     for i, peer_id in enumerate(peer_list):
         peer = peers[peer_id]
         screen.addstr(i + 4, 0,
                       row_format % (peer.id, peer.total_outbound_msgs, peer.total_outbound_bytes,
                                     peer.total_inbound_msgs, peer.total_inbound_bytes,
-                                    peer.connection_type, peer.address, peer.send_window_bytes,
-                                    peer.send_mss),
+                                    peer.connection_type, peer.address, peer.retrans_packets,
+                                    peer.send_window_bytes, peer.send_mss, peer.ca_state),
                       curses.A_REVERSE if i + scroll == cur_list_pos else curses.A_NORMAL)
         if i + scroll == cur_list_pos:
             info_window = info_panel.window()
