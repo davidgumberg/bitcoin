@@ -23,7 +23,11 @@
 #include <net/if.h>      // IWYU pragma: export
 #include <netdb.h>       // IWYU pragma: export
 #include <netinet/in.h>  // IWYU pragma: export
-#include <netinet/tcp.h> // IWYU pragma: export
+    #ifdef __linux__
+    #include <linux/tcp.h> // IWYU pragma: export
+    #else
+    #include <netinet/tcp.h> // IWYU pragma: export
+    #endif
 #include <sys/mman.h>    // IWYU pragma: export
 #include <sys/select.h>  // IWYU pragma: export
 #include <sys/socket.h>  // IWYU pragma: export

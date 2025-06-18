@@ -24,6 +24,7 @@ from bcc import BPF, USDT
 # a sandboxed Linux kernel VM.
 program = """
 #include <uapi/linux/ptrace.h>
+#include <uapi/linux/tcp.h>
 
 // Tor v3 addresses are 62 chars + 6 chars for the port (':12345').
 // I2P addresses are 60 chars + 6 chars for the port (':12345').
@@ -33,17 +34,27 @@ program = """
 
 struct p2p_message
 {
-    u64     peer_id;
-    char    peer_addr[MAX_PEER_ADDR_LENGTH];
-    char    peer_conn_type[MAX_PEER_CONN_TYPE_LENGTH];
-    char    msg_type[MAX_MSG_TYPE_LENGTH];
-    u64     msg_size;
+    u64                 peer_id;
+    char                peer_addr[MAX_PEER_ADDR_LENGTH];
+    char                peer_conn_type[MAX_PEER_CONN_TYPE_LENGTH];
+    char                msg_type[MAX_MSG_TYPE_LENGTH];
+    u64                 msg_size;
 };
 
+// Necessary because bpf can't automatically deduce the struct definition
+struct tcp_info_partial
+{
+    u64 peer_id;
+    u32 tcpi_snd_cwnd;
+    u32 tcpi_snd_mss;
+    u32 tcpi_snd_wnd;
+};
 
 // Two BPF perf buffers for pushing data (here P2P messages) to user space.
 BPF_PERF_OUTPUT(inbound_messages);
 BPF_PERF_OUTPUT(outbound_messages);
+
+BPF_PERF_OUTPUT(peer_tcp_infos);
 
 int trace_inbound_message(struct pt_regs *ctx) {
     struct p2p_message msg = {};
@@ -57,8 +68,21 @@ int trace_inbound_message(struct pt_regs *ctx) {
     bpf_usdt_readarg(4, ctx, &pmsg_type);
     bpf_probe_read_user_str(&msg.msg_type, sizeof(msg.msg_type), pmsg_type);
     bpf_usdt_readarg(5, ctx, &msg.msg_size);
-
     inbound_messages.perf_submit(ctx, &msg, sizeof(msg));
+
+    struct tcp_info peer_tcp_info= {};
+    void *info_type = NULL;
+    bpf_usdt_readarg(7, ctx, &info_type);
+    bpf_probe_read_user(&peer_tcp_info, sizeof(peer_tcp_info), info_type);
+
+    struct tcp_info_partial peer_tcp_info_partial = {
+        .peer_id =          msg.peer_id,
+        .tcpi_snd_cwnd =    peer_tcp_info.tcpi_snd_cwnd,
+        .tcpi_snd_mss =     peer_tcp_info.tcpi_snd_mss,
+        .tcpi_snd_wnd =     peer_tcp_info.tcpi_snd_wnd
+    };
+    peer_tcp_infos.perf_submit(ctx, &peer_tcp_info_partial, sizeof(peer_tcp_info_partial));
+
     return 0;
 };
 
@@ -76,10 +100,23 @@ int trace_outbound_message(struct pt_regs *ctx) {
     bpf_usdt_readarg(5, ctx, &msg.msg_size);
 
     outbound_messages.perf_submit(ctx, &msg, sizeof(msg));
+
+    struct tcp_info peer_tcp_info= {};
+    void *info_type = NULL;
+    bpf_usdt_readarg(7, ctx, &info_type);
+    bpf_probe_read_user(&peer_tcp_info, sizeof(peer_tcp_info), info_type);
+
+    struct tcp_info_partial peer_tcp_info_partial = {
+        .peer_id =          msg.peer_id,
+        .tcpi_snd_cwnd =    peer_tcp_info.tcpi_snd_cwnd,
+        .tcpi_snd_mss =     peer_tcp_info.tcpi_snd_mss,
+        .tcpi_snd_wnd =     peer_tcp_info.tcpi_snd_wnd
+    };
+    peer_tcp_infos.perf_submit(ctx, &peer_tcp_info_partial, sizeof(peer_tcp_info_partial));
+
     return 0;
 };
 """
-
 
 class Message:
     """ A P2P network message. """
@@ -105,6 +142,8 @@ class Peer:
     total_inbound_bytes = 0
     total_outbound_msgs = 0
     total_outbound_bytes = 0
+    send_window_bytes = 0
+    send_mss = 0
 
     def __init__(self, id, address, connection_type):
         self.id = id
@@ -123,6 +162,9 @@ class Peer:
             self.total_outbound_bytes += message.size
             self.total_outbound_msgs += 1
 
+    def add_stats(self, snd_cwnd, snd_mss, snd_wnd):
+        self.send_window_bytes = min(snd_cwnd * snd_mss, snd_wnd)
+        self.send_mss = snd_mss
 
 def main(pid):
     peers = dict()
@@ -162,9 +204,20 @@ def main(pid):
         peers[event.peer_id].add_message(
             Message(event.msg_type.decode("utf-8"), event.msg_size, False))
 
+    # BCC: perf buffer handle function for peer_tcp_infos
+    def handle_tcp_info(_, data, size):
+        """ Inbound message handler.
+
+        Called each time a message is submitted to the inbound_messages BPF table."""
+
+        event = bpf["peer_tcp_infos"].event(data)
+        if event.peer_id in peers:
+            peers[event.peer_id].add_stats(event.tcpi_snd_cwnd, event.tcpi_snd_mss, event.tcpi_snd_wnd)
+
     # BCC: add handlers to the inbound and outbound perf buffers
     bpf["inbound_messages"].open_perf_buffer(handle_inbound)
     bpf["outbound_messages"].open_perf_buffer(handle_outbound)
+    bpf["peer_tcp_infos"].open_perf_buffer(handle_tcp_info)
 
     wrapper(loop, bpf, peers)
 
@@ -215,21 +268,22 @@ def render(screen, peers, cur_list_pos, scroll, ROWS_AVALIABLE_FOR_LIST, info_pa
 
     This code is unrelated to USDT, BCC and BPF.
     """
-    header_format = "%6s  %-20s  %-20s  %-22s  %-67s"
-    row_format = "%6s  %-5d %9d byte  %-5d %9d byte  %-22s  %-67s"
+    header_format = "%6s  %-21s  %-21s  %-22s  %-45s  %-12s  %-11s"
+    row_format = "%6s  %-5d %9d bytes  %-5d %9d bytes  %-22s  %-45s  %-6d bytes  %-5d bytes"
 
     screen.addstr(0, 1, (" P2P Message Monitor "), curses.A_REVERSE)
     screen.addstr(
         1, 0, (" Navigate with UP/DOWN or J/K and select a peer with ENTER or SPACE to see individual P2P messages"), curses.A_NORMAL)
     screen.addstr(3, 0,
-                  header_format % ("PEER", "OUTBOUND", "INBOUND", "TYPE", "ADDR"), curses.A_BOLD | curses.A_UNDERLINE)
+                  header_format % ("PEER", "OUTBOUND", "INBOUND", "TYPE", "ADDR", "TCP_WINDOW", "TCP_MSS"), curses.A_BOLD | curses.A_UNDERLINE)
     peer_list = sorted(peers.keys())[scroll:ROWS_AVALIABLE_FOR_LIST+scroll]
     for i, peer_id in enumerate(peer_list):
         peer = peers[peer_id]
         screen.addstr(i + 4, 0,
                       row_format % (peer.id, peer.total_outbound_msgs, peer.total_outbound_bytes,
                                     peer.total_inbound_msgs, peer.total_inbound_bytes,
-                                    peer.connection_type, peer.address),
+                                    peer.connection_type, peer.address, peer.send_window_bytes,
+                                    peer.send_mss),
                       curses.A_REVERSE if i + scroll == cur_list_pos else curses.A_NORMAL)
         if i + scroll == cur_list_pos:
             info_window = info_panel.window()

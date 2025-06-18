@@ -970,6 +970,20 @@ public:
         m_min_ping_time = std::min(m_min_ping_time.load(), ping_time);
     }
 
+#ifdef __linux__
+private:
+    struct tcp_info m_tcp_info{};
+    socklen_t m_tcp_info_len{sizeof(m_tcp_info)};
+
+public:
+    const struct tcp_info* GetTCPInfo() EXCLUSIVE_LOCKS_REQUIRED(!m_sock_mutex)
+    {
+        MaybeCheckNotHeld(m_sock_mutex);
+        WITH_LOCK(m_sock_mutex, assert(!m_sock->GetSockOpt(IPPROTO_TCP, TCP_INFO, &m_tcp_info, &m_tcp_info_len)));
+        return &m_tcp_info;
+    }
+#endif
+
 private:
     const NodeId id;
     const uint64_t nLocalHostNonce;
