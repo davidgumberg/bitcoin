@@ -465,7 +465,7 @@ BOOST_AUTO_TEST_CASE(netpermissions_test)
     BOOST_CHECK_EQUAL(connection_direction, ConnectionDirection::Both);
 
     const auto strings = NetPermissions::ToStrings(NetPermissionFlags::All);
-    BOOST_CHECK_EQUAL(strings.size(), 7U);
+    BOOST_CHECK_EQUAL(strings.size(), 8U);
     BOOST_CHECK(std::find(strings.begin(), strings.end(), "bloomfilter") != strings.end());
     BOOST_CHECK(std::find(strings.begin(), strings.end(), "forcerelay") != strings.end());
     BOOST_CHECK(std::find(strings.begin(), strings.end(), "relay") != strings.end());
@@ -473,6 +473,7 @@ BOOST_AUTO_TEST_CASE(netpermissions_test)
     BOOST_CHECK(std::find(strings.begin(), strings.end(), "mempool") != strings.end());
     BOOST_CHECK(std::find(strings.begin(), strings.end(), "download") != strings.end());
     BOOST_CHECK(std::find(strings.begin(), strings.end(), "addr") != strings.end());
+    BOOST_CHECK(std::find(strings.begin(), strings.end(), "forcehighbandwidthcb") != strings.end());
 }
 
 BOOST_AUTO_TEST_CASE(netbase_dont_resolve_strings_with_embedded_nul_characters)
