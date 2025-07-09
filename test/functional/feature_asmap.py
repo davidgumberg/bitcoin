@@ -97,8 +97,8 @@ class AsmapTest(BitcoinTestFramework):
         self.restart_node(0, ["-asmap", "-checkaddrman=1", "-test=addrman"])
         with self.node.assert_debug_log(
             expected_msgs=[
-                "CheckAddrman: new 2, tried 2, total 4 started",
-                "CheckAddrman: completed",
+                "int AddrManImpl::CheckAddrman() const: new 2, tried 2, total 4 started",
+                "int AddrManImpl::CheckAddrman() const: completed",
             ]
         ):
             self.node.getnodeaddresses()  # getnodeaddresses re-runs the addrman checks

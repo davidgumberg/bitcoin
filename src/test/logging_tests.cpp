@@ -87,9 +87,10 @@ struct LogSetup : public BasicTestingSetup {
 
 BOOST_AUTO_TEST_CASE(logging_timer)
 {
-    auto micro_timer = BCLog::Timer<std::chrono::microseconds>("tests", "end_msg");
-    const std::string_view result_prefix{"tests: msg ("};
-    BOOST_CHECK_EQUAL(micro_timer.LogMsg("msg").substr(0, result_prefix.size()), result_prefix);
+    const auto current_source_loc = std::source_location::current();
+    const std::string expected_result_prefix{strprintf("%s: msg (", current_source_loc.function_name())};
+    auto micro_timer = BCLog::Timer<std::chrono::microseconds>(current_source_loc, "end_msg");
+    BOOST_CHECK(micro_timer.LogMsg("msg").starts_with(expected_result_prefix));
 }
 
 BOOST_FIXTURE_TEST_CASE(logging_LogPrintStr, LogSetup)

@@ -26,11 +26,11 @@ public:
     //! If log_category is left as the default, end_msg will log unconditionally
     //! (instead of being filtered by category).
     Timer(
-        std::string prefix,
+        std::source_location source_loc,
         std::string end_msg,
         BCLog::LogFlags log_category = BCLog::LogFlags::ALL,
         bool msg_on_completion = true)
-        : m_prefix(std::move(prefix)),
+        : m_source_location((source_loc)),
           m_title(std::move(end_msg)),
           m_log_category(log_category),
           m_message_on_completion(msg_on_completion)
@@ -51,28 +51,27 @@ public:
     void Log(const std::string& msg)
     {
         const std::string full_msg = this->LogMsg(msg);
+        const auto log_level = (m_log_category == BCLog::LogFlags::ALL) ? BCLog::Level::Info : BCLog::Level::Debug;
 
-        if (m_log_category == BCLog::LogFlags::ALL) {
-            LogPrintf("%s\n", full_msg);
-        } else {
-            LogDebug(m_log_category, "%s\n", full_msg);
-        }
+        LogPrintFormatInternal(std::source_location{m_source_location}, m_log_category, log_level, true, "%s\n", full_msg);
     }
 
     std::string LogMsg(const std::string& msg)
     {
+        const std::string function_name{m_source_location.function_name()};
         const auto end_time{std::chrono::steady_clock::now()};
         if (!m_start_t) {
-            return strprintf("%s: %s", m_prefix, msg);
+            return strprintf("%s: %s", function_name, msg);
         }
         const auto duration{end_time - *m_start_t};
 
+
         if constexpr (std::is_same_v<TimeType, std::chrono::microseconds>) {
-            return strprintf("%s: %s (%iμs)", m_prefix, msg, Ticks<std::chrono::microseconds>(duration));
+            return strprintf("%s: %s (%iμs)", function_name, msg, Ticks<std::chrono::microseconds>(duration));
         } else if constexpr (std::is_same_v<TimeType, std::chrono::milliseconds>) {
-            return strprintf("%s: %s (%.2fms)", m_prefix, msg, Ticks<MillisecondsDouble>(duration));
+            return strprintf("%s: %s (%.2fms)", function_name, msg, Ticks<MillisecondsDouble>(duration));
         } else if constexpr (std::is_same_v<TimeType, std::chrono::seconds>) {
-            return strprintf("%s: %s (%.2fs)", m_prefix, msg, Ticks<SecondsDouble>(duration));
+            return strprintf("%s: %s (%.2fs)", function_name, msg, Ticks<SecondsDouble>(duration));
         } else {
             static_assert(ALWAYS_FALSE<TimeType>, "Error: unexpected time type");
         }
@@ -81,8 +80,8 @@ public:
 private:
     std::optional<std::chrono::steady_clock::time_point> m_start_t{};
 
-    //! Log prefix; usually the name of the function this was created in.
-    const std::string m_prefix;
+    //! The source location this was created in. The function name is used as a prefix.
+    const std::source_location m_source_location;
 
     //! A descriptive message of what is being timed.
     const std::string m_title;
@@ -99,13 +98,13 @@ private:
 
 
 #define LOG_TIME_MICROS_WITH_CATEGORY(end_msg, log_category) \
-    BCLog::Timer<std::chrono::microseconds> UNIQUE_NAME(logging_timer)(__func__, end_msg, log_category)
+    BCLog::Timer<std::chrono::microseconds> UNIQUE_NAME(logging_timer)(std::source_location::current(), end_msg, log_category)
 #define LOG_TIME_MILLIS_WITH_CATEGORY(end_msg, log_category) \
-    BCLog::Timer<std::chrono::milliseconds> UNIQUE_NAME(logging_timer)(__func__, end_msg, log_category)
+    BCLog::Timer<std::chrono::milliseconds> UNIQUE_NAME(logging_timer)(std::source_location::current(), end_msg, log_category)
 #define LOG_TIME_MILLIS_WITH_CATEGORY_MSG_ONCE(end_msg, log_category) \
-    BCLog::Timer<std::chrono::milliseconds> UNIQUE_NAME(logging_timer)(__func__, end_msg, log_category, /* msg_on_completion=*/false)
+    BCLog::Timer<std::chrono::milliseconds> UNIQUE_NAME(logging_timer)(std::source_location::current(), end_msg, log_category, /* msg_on_completion=*/false)
 #define LOG_TIME_SECONDS(end_msg) \
-    BCLog::Timer<std::chrono::seconds> UNIQUE_NAME(logging_timer)(__func__, end_msg)
+    BCLog::Timer<std::chrono::seconds> UNIQUE_NAME(logging_timer)(std::source_location::current(), end_msg)
 
 
 #endif // BITCOIN_LOGGING_TIMER_H
