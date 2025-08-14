@@ -11,6 +11,7 @@
 #include <consensus/consensus.h>  // for MAX_BLOCK_SERIALIZED_SIZE
 #include <consensus/validation.h> // for BlockValidationState/TxValidationState
 #include <logging.h>
+#include <logging/timer.h>
 #include <net.h>
 #include <net_processing.h>
 #include <streams.h>
@@ -798,6 +799,7 @@ PartialBlockData::PartialBlockData(const CService& node, CTxMemPool* mempool, co
 
 void PartialBlockData::ReconstructBlockFromDecoder() {
     assert(decoder.DecodeReady());
+    LOG_TIME_MILLIS_WITH_CATEGORY("Reconstructing block from decoder", BCLog::UDPNET);
 
     for (uint32_t i = 0; i < DIV_CEIL(obj_length, sizeof(UDPBlockMessage::data)); i++) {
         if (!block_data.IsChunkAvailable(i)) {
