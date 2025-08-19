@@ -6,6 +6,7 @@
 #include <chainparams.h>
 #include <consensus/params.h>
 #include <headerssync.h>
+#include <net_processing.h>
 #include <pow.h>
 #include <test/util/setup_common.h>
 #include <validation.h>
@@ -46,6 +47,12 @@ static HeadersSyncState::ProcessingResult g_latest_result;
 constexpr size_t TARGET_BLOCKS{15'000};
 constexpr arith_uint256 CHAIN_WORK{TARGET_BLOCKS * 2};
 
+// Subtract MAX_HEADERS_RESULTS (2000 headers/message) + an arbitrary smaller
+// value (123) so our redownload buffer is well below the number of blocks
+// required to reach the CHAIN_WORK threshold, to behave similarly to mainnet.
+constexpr size_t REDOWNLOAD_BUFFER_SIZE{TARGET_BLOCKS - (MAX_HEADERS_RESULTS + 123)};
+constexpr size_t COMMITMENT_PERIOD{600}; // Somewhat close to mainnet.
+
 struct HeadersGeneratorSetup : public RegTestingSetup {
     const CBlock& genesis{Params().GenesisBlock()};
     const CBlockIndex* chain_start{WITH_LOCK(::cs_main, return m_node.chainman->m_blockman.LookupBlockIndex(genesis.GetHash()))};
@@ -78,6 +85,10 @@ struct HeadersGeneratorSetup : public RegTestingSetup {
     {
         return {/*id=*/0,
                 Params().GetConsensus(),
+                HeadersSyncParams{
+                    .commitment_period = COMMITMENT_PERIOD,
+                    .redownload_buffer_size = REDOWNLOAD_BUFFER_SIZE,
+                },
                 chain_start,
                 /*minimum_required_work=*/CHAIN_WORK};
     }
