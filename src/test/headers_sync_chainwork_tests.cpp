@@ -56,7 +56,7 @@ struct HeadersGeneratorSetup : public RegTestingSetup {
 
     // Generate headers for two different chains (using differing merkle roots
     // to ensure the headers are different).
-    const std::vector<CBlockHeader>& FirstChain()
+    std::vector<CBlockHeader> FirstChain()
     {
         // Block header hash target is half of max uint256 (2**256 / 2), expressible
         // roughly as the coefficient 0x7fffff with the exponent 0x20 (32 bytes).
@@ -66,16 +66,14 @@ struct HeadersGeneratorSetup : public RegTestingSetup {
 
         // Subtract 1 since the genesis block also contributes work so we reach
         // the CHAIN_WORK target.
-        static const auto first_chain{GenerateHeaders(/*count=*/TARGET_BLOCKS - 1, genesis.GetHash(),
-                genesis.nVersion, genesis.nTime, /*merkle_root=*/uint256::ZERO, genesis.nBits)};
-        return first_chain;
+        return GenerateHeaders(/*count=*/TARGET_BLOCKS - 1, genesis.GetHash(),
+               genesis.nVersion, genesis.nTime, /*merkle_root=*/uint256::ZERO, genesis.nBits);
     }
-    const std::vector<CBlockHeader>& SecondChain()
+    std::vector<CBlockHeader> SecondChain()
     {
         // Subtract 2 to keep total work below the target.
-        static const auto second_chain{GenerateHeaders(/*count=*/TARGET_BLOCKS - 2, genesis.GetHash(),
-                genesis.nVersion, genesis.nTime, /*merkle_root=*/uint256::ONE, genesis.nBits)};
-        return second_chain;
+        return GenerateHeaders(/*count=*/TARGET_BLOCKS - 1, genesis.GetHash(),
+               genesis.nVersion, genesis.nTime, /*merkle_root=*/uint256::ONE, genesis.nBits);
     }
 
     HeadersSyncState CreateState()
@@ -216,7 +214,8 @@ BOOST_AUTO_TEST_CASE(happy_path)
 
 BOOST_AUTO_TEST_CASE(too_little_work)
 {
-    const auto& second_chain{SecondChain()};
+    auto second_chain{SecondChain()};
+    second_chain.pop_back();
 
     // Verify that just trying to process the second chain would not succeed
     // (too little work).
