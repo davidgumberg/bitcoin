@@ -106,12 +106,12 @@ ReadStatus PartiallyDownloadedBlock::InitData(const CBlockHeaderAndShortTxIDs& c
     std::vector<bool> have_txn(txn_available.size());
     {
     LOCK(pool->cs);
-    for (const auto& tx : pool->txns_randomized) {
-        uint64_t shortid = cmpctblock.GetShortID(tx->GetWitnessHash());
+    for (const auto& entry : pool->mapTx.get<ancestor_score>()) {
+        uint64_t shortid = cmpctblock.GetShortID(entry.GetSharedTx()->GetWitnessHash());
         std::unordered_map<uint64_t, uint16_t>::iterator idit = shorttxids.find(shortid);
         if (idit != shorttxids.end()) {
             if (!have_txn[idit->second]) {
-                txn_available[idit->second] = tx;
+                txn_available[idit->second] = entry.GetSharedTx();
                 have_txn[idit->second]  = true;
                 mempool_count++;
             } else {
