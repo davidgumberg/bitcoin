@@ -145,6 +145,12 @@ public:
     [[nodiscard]] virtual int GetSockName(sockaddr* name, socklen_t* name_len) const;
 
     /**
+     * To the degree to which the platform supports it, get the number of bytes
+     * in the socket output queue: unsent + unack'ed.
+     */
+    [[nodiscard]] virtual int GetOSBytesQueued() const;
+
+    /**
      * Set the non-blocking option on the socket.
      * @return true if set successfully
      */
