@@ -116,13 +116,18 @@ typedef SSIZE_T ssize_t;
 // linux/tcp.h contains the definition of the extended tcp_info struct, which
 // has the tcpi_snd_wnd field.
 #if defined(__linux__)
-#include <linux/tcp.h>  // IWYU pragma: export
+#include <linux/tcp.h>      // IWYU pragma: export
 #include <linux/version.h>
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(5, 4, 0)
 #define TCP_INFO_HAS_SEND_WND
 #endif
 #elif !defined(WIN32)
 #include <netinet/tcp.h>    // IWYU pragma: export
+#endif
+
+// Querying bytes in the send buffer on these platforms requires ioctl
+#if defined(__linux__) || defined(__FreeBSD__) || defined(__NetBSD__)
+#include <sys/ioctl.h>  // IWYU pragma: export
 #endif
 
 #endif // BITCOIN_COMPAT_COMPAT_H
