@@ -360,6 +360,14 @@ public:
     /** Return the memory usage of this transport attributable to buffered data to send. */
     virtual size_t GetSendMemoryUsage() const noexcept = 0;
 
+    /** Return the size of the P2P message header for this transport. */
+    virtual size_t GetMessageHeaderSize(const std::string &m_type) const noexcept = 0;
+
+    virtual size_t GetMessageSize(const CSerializedNetMsg &msg) const noexcept = 0;
+
+    /** Return the expected serialized size of the buffered data. */
+    virtual size_t GetSendMessageSize() const noexcept = 0;
+
     // 3. Miscellaneous functions.
 
     /** Whether upon disconnections, a reconnect with V1 is warranted. */
@@ -445,7 +453,11 @@ public:
     BytesToSend GetBytesToSend(bool have_next_message) const noexcept override EXCLUSIVE_LOCKS_REQUIRED(!m_send_mutex);
     void MarkBytesSent(size_t bytes_sent) noexcept override EXCLUSIVE_LOCKS_REQUIRED(!m_send_mutex);
     size_t GetSendMemoryUsage() const noexcept override EXCLUSIVE_LOCKS_REQUIRED(!m_send_mutex);
+    size_t GetMessageHeaderSize(const std::string &m_type) const noexcept override;
+    size_t GetMessageSize(const CSerializedNetMsg &msg) const noexcept override;
+    size_t GetSendMessageSize() const noexcept override EXCLUSIVE_LOCKS_REQUIRED(!m_send_mutex);
     bool ShouldReconnectV1() const noexcept override { return false; }
+
 };
 
 class V2Transport final : public Transport
@@ -655,6 +667,9 @@ public:
     BytesToSend GetBytesToSend(bool have_next_message) const noexcept override EXCLUSIVE_LOCKS_REQUIRED(!m_send_mutex);
     void MarkBytesSent(size_t bytes_sent) noexcept override EXCLUSIVE_LOCKS_REQUIRED(!m_send_mutex);
     size_t GetSendMemoryUsage() const noexcept override EXCLUSIVE_LOCKS_REQUIRED(!m_send_mutex);
+    size_t GetMessageHeaderSize(const std::string &m_type) const noexcept override EXCLUSIVE_LOCKS_REQUIRED(!m_send_mutex);
+    size_t GetMessageSize(const CSerializedNetMsg &msg) const noexcept override EXCLUSIVE_LOCKS_REQUIRED(!m_send_mutex);
+    size_t GetSendMessageSize() const noexcept override EXCLUSIVE_LOCKS_REQUIRED(!m_send_mutex);
 
     // Miscellaneous functions.
     bool ShouldReconnectV1() const noexcept override EXCLUSIVE_LOCKS_REQUIRED(!m_recv_mutex, !m_send_mutex);
@@ -692,6 +707,8 @@ public:
 
     /** Sum of GetMemoryUsage of all vSendMsg entries. */
     size_t m_send_memusage GUARDED_BY(cs_vSend){0};
+    /** Total length of all vSendMsg entries. */
+    size_t m_send_size GUARDED_BY(cs_vSend){0};
     /** Total number of bytes sent on the wire to this peer. */
     uint64_t nSendBytes GUARDED_BY(cs_vSend){0};
     /** Messages still to be fed to m_transport->SetMessageToSend. */
@@ -699,6 +716,12 @@ public:
     Mutex cs_vSend;
     Mutex m_sock_mutex;
     Mutex cs_vRecv;
+
+    /** Length in bytes of messages in our send buffer, the OS's send buffer,
+     * and all unack'ed messages, used for figuring out how much overhead is
+     * left in the TCP window.
+     */
+    // size_t GetWindowBytesUsed()
 
     uint64_t nRecvBytes GUARDED_BY(cs_vRecv){0};
 
