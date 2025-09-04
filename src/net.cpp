@@ -905,6 +905,32 @@ size_t V1Transport::GetSendMemoryUsage() const noexcept
     return m_message_to_send.GetMemoryUsage();
 }
 
+size_t V1Transport::GetMessageHeaderSize(const std::string &m_type) const noexcept
+{
+    return CMessageHeader::HEADER_SIZE;
+}
+
+size_t V1Transport::GetMessageSize(const CSerializedNetMsg &msg) const noexcept
+{
+    size_t contents_len = msg.data.size();
+    if (contents_len == 0) {
+        return 0;
+    } else {
+        return contents_len + GetMessageHeaderSize(msg.m_type);
+    }
+}
+
+size_t V1Transport::GetSendMessageSize() const noexcept
+{
+    AssertLockNotHeld(m_send_mutex);
+    LOCK(m_send_mutex);
+    if (m_sending_header) {
+        return m_header_to_send.size() - m_bytes_sent + m_message_to_send.data.size();
+    } else {
+        return m_message_to_send.data.size() - m_bytes_sent;
+    }
+}
+
 namespace {
 
 /** List of short messages as defined in BIP324, in order.
@@ -1574,6 +1600,37 @@ size_t V2Transport::GetSendMemoryUsage() const noexcept
     return sizeof(m_send_buffer) + memusage::DynamicUsage(m_send_buffer);
 }
 
+size_t V2Transport::GetMessageHeaderSize(const std::string &m_type) const noexcept
+{
+    AssertLockNotHeld(m_send_mutex);
+    LOCK(m_send_mutex);
+    if (m_send_state == SendState::V1) return m_v1_fallback.GetMessageHeaderSize(m_type);
+    // Headers are either one byte with short encoding, or 13.
+    // https://github.com/bitcoin/bips/blob/master/bip-0324.mediawiki#v2-bitcoin-p2p-message-structure
+    auto msg_type_len = 1 + (V2_MESSAGE_MAP(m_type) ? 0 : CMessageHeader::MESSAGE_TYPE_SIZE);
+    return msg_type_len + BIP324Cipher::EXPANSION + VERSION_CONTENTS.size();
+}
+
+size_t V2Transport::GetMessageSize(const CSerializedNetMsg &msg) const noexcept
+{
+    AssertLockNotHeld(m_send_mutex);
+    auto send_state = WITH_LOCK(m_send_mutex, return m_send_state);
+
+    if (send_state == SendState::V1) return m_v1_fallback.GetMessageSize(msg);
+
+    return GetMessageHeaderSize(msg.m_type) + msg.data.size();
+}
+
+size_t V2Transport::GetSendMessageSize() const noexcept
+{
+    AssertLockNotHeld(m_send_mutex);
+    auto send_state = WITH_LOCK(m_send_mutex, return m_send_state);
+
+    if (send_state == SendState::V1) return m_v1_fallback.GetSendMessageSize();
+
+    return WITH_LOCK(m_send_mutex, return m_send_buffer.size() - m_send_pos);
+}
+
 Transport::Info V2Transport::GetInfo() const noexcept
 {
     AssertLockNotHeld(m_recv_mutex);
@@ -1608,9 +1665,11 @@ std::pair<size_t, bool> CConnman::SocketSendData(CNode& node) const
             // there is an existing message still being sent, or (for v2 transports) when the
             // handshake has not yet completed.
             size_t memusage = it->GetMemoryUsage();
+            size_t sersize = node.m_transport->GetMessageSize(*it);
             if (node.m_transport->SetMessageToSend(*it)) {
                 // Update memory usage of send buffer (as *it will be deleted).
                 node.m_send_memusage -= memusage;
+                node.m_send_size -= sersize;
                 ++it;
             }
         }
@@ -1669,6 +1728,7 @@ std::pair<size_t, bool> CConnman::SocketSendData(CNode& node) const
 
     if (it == node.vSendMsg.end()) {
         assert(node.m_send_memusage == 0);
+        Assume(node.m_send_size == 0);
     }
     node.vSendMsg.erase(node.vSendMsg.begin(), it);
     return {nSentSize, data_left};
@@ -3925,6 +3985,7 @@ void CConnman::PushMessage(CNode* pnode, CSerializedNetMsg&& msg)
 
         // Update memory usage of send buffer.
         pnode->m_send_memusage += msg.GetMemoryUsage();
+        pnode->m_send_size += pnode->m_transport->GetMessageSize(msg);
         if (pnode->m_send_memusage + pnode->m_transport->GetSendMemoryUsage() > nSendBufferMaxSize) pnode->fPauseSend = true;
         // Move message to vSendMsg queue.
         pnode->vSendMsg.push_back(std::move(msg));
