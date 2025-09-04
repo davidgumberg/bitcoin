@@ -909,6 +909,19 @@ size_t V1Transport::GetSendMemoryUsage() const noexcept
     return m_message_to_send.GetMemoryUsage();
 }
 
+size_t V1Transport::GetSendMessageSize() const noexcept
+{
+    AssertLockNotHeld(m_send_mutex);
+    LOCK(m_send_mutex);
+
+    size_t contents_len = m_message_to_send.data.size();
+    if (contents_len == 0) {
+        return 0;
+    } else {
+        return m_message_to_send.data.size() + CMessageHeader::HEADER_SIZE;
+    }
+}
+
 namespace {
 
 /** List of short messages as defined in BIP324, in order.
@@ -1574,6 +1587,16 @@ size_t V2Transport::GetSendMemoryUsage() const noexcept
     if (m_send_state == SendState::V1) return m_v1_fallback.GetSendMemoryUsage();
 
     return sizeof(m_send_buffer) + memusage::DynamicUsage(m_send_buffer);
+}
+
+size_t V2Transport::GetSendMessageSize() const noexcept
+{
+    AssertLockNotHeld(m_send_mutex);
+    LOCK(m_send_mutex);
+    if (m_send_state == SendState::V1) return m_v1_fallback.GetSendMessageSize();
+
+    // FIXME: Probably Wrong..
+    return m_send_buffer.size();
 }
 
 Transport::Info V2Transport::GetInfo() const noexcept
