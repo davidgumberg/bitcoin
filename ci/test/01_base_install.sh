@@ -57,7 +57,14 @@ fi
 
 if [[ -n "${USE_INSTRUMENTED_LIBCPP}" ]]; then
   if [ -n "${APT_LLVM_V}" ]; then
-    ${CI_RETRY_EXE} git clone --depth=1 https://github.com/llvm/llvm-project -b "llvmorg-$( clang --version | sed --silent 's@.*clang version \([0-9.]*\).*@\1@p' )" /llvm-project
+     git init /llvm-project
+     cd /llvm-project
+     git remote add origin https://github.com/llvm/llvm-project.git
+     LLVM_SHORT_HASH=$( clang --version | sed --silent 's@.*clang version [0-9.]* (++[0-9].*+\([0-9a-f]*\)-.*@\1@p')
+     ${CI_RETRY_EXE} curl -s -H "Accept: application/vnd.github.v3+json" "https://api.github.com/repos/llvm/llvm-project/commits/${LLVM_SHORT_HASH}" -o llvm_commit.json
+     LLVM_FULL_HASH=$(sed --silent "s@.*\"sha\": \"\(${LLVM_SHORT_HASH}[0-9a-f]*\)\".*@\1@p" llvm_commit.json)
+     ${CI_RETRY_EXE} git fetch --depth=1 origin $LLVM_FULL_HASH
+     cd /
   else
     ${CI_RETRY_EXE} git clone --depth=1 https://github.com/llvm/llvm-project -b "llvmorg-21.1.0" /llvm-project
 
