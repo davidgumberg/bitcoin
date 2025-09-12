@@ -6,6 +6,7 @@
 #ifndef BITCOIN_ARITH_UINT256_H
 #define BITCOIN_ARITH_UINT256_H
 
+#include <array>
 #include <compare>
 #include <cstdint>
 #include <cstring>
@@ -28,15 +29,10 @@ protected:
     static_assert(BITS / 32 > 0 && BITS % 32 == 0, "Template parameter BITS must be a positive multiple of 32.");
     static constexpr int WIDTH = BITS / 32;
     /** Big integer represented with 32-bit digits, least-significant first. */
-    uint32_t pn[WIDTH];
+    std::array<uint32_t, WIDTH> pn{};
 public:
 
-    base_uint()
-    {
-        for (int i = 0; i < WIDTH; i++)
-            pn[i] = 0;
-    }
-
+    base_uint() = default;
     base_uint(const base_uint& b) = default;
     base_uint& operator=(const base_uint& b) = default;
 
@@ -200,7 +196,7 @@ public:
     friend inline base_uint operator>>(const base_uint& a, int shift) { return base_uint(a) >>= shift; }
     friend inline base_uint operator<<(const base_uint& a, int shift) { return base_uint(a) <<= shift; }
     friend inline base_uint operator*(const base_uint& a, uint32_t b) { return base_uint(a) *= b; }
-    friend inline bool operator==(const base_uint& a, const base_uint& b) { return memcmp(a.pn, b.pn, sizeof(a.pn)) == 0; }
+    friend inline bool operator==(const base_uint& a, const base_uint& b) = default;
     friend inline std::strong_ordering operator<=>(const base_uint& a, const base_uint& b) { return a.CompareTo(b) <=> 0; }
     friend inline bool operator==(const base_uint& a, uint64_t b) { return a.EqualTo(b); }
 
