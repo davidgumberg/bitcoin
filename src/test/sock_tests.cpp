@@ -96,11 +96,11 @@ struct TcpSocketPair {
     Sock sender;
     Sock receiver;
 
-    TcpSocketPair()
+    TcpSocketPair(bool connect = true)
         : sender{Sock{CreateSocket()}},
         receiver{Sock{CreateSocket()}}
     {
-        connect_pair();
+        if (connect) connect_pair();
     }
 
     TcpSocketPair(const TcpSocketPair&) = delete;
@@ -193,15 +193,36 @@ BOOST_AUTO_TEST_CASE(recv_until_terminator_limit)
 
 BOOST_AUTO_TEST_CASE(tcp_info)
 {
-    socket_pair socks = socket_pair::create(/*connect=*/true);
-    TCPInfo sender_info{*socks.sender}, receiver_info{*socks.receiver};
+    // Setting some parameters before connecting.
+    auto socks = TcpSocketPair(/*connect=*/false);
+
+    // Set some small multiple of 8 as receiver advertised window, as long as we
+    // are below MSS this will be the window size.
+    int sender_rcvbuf = 8 * 160;
+    socklen_t sender_rcvbuf_len{sizeof(sender_rcvbuf)};
+    BOOST_CHECK(!socks.sender.SetSockOpt(SOL_SOCKET, SO_RCVBUF, &sender_rcvbuf, sender_rcvbuf_len));
+
+    int receiver_rcvbuf = 8 * 150;
+    socklen_t receiver_rcvbuf_len{sizeof(receiver_rcvbuf)};
+    BOOST_CHECK(!socks.receiver.SetSockOpt(SOL_SOCKET, SO_RCVBUF, &receiver_rcvbuf, receiver_rcvbuf_len));
+
+    // Now connect.
+    socks.connect_pair();
+
+    TCPInfo sender_info{socks.sender}, receiver_info{socks.receiver};
     // Test that we can acquire a valid TCP_INFO structure on all
     // supported platforms.
     BOOST_CHECK(sender_info.m_valid);
     BOOST_CHECK(receiver_info.m_valid);
 
-    BOOST_CHECK(!SocketIsClosed(*socks.sender));
-    BOOST_CHECK(!SocketIsClosed(*socks.receiver));
+#if !defined(__APPLE__)
+    // macOS ignores SO_RCVBUF if sysctl param net.inet.tcp.doautorcvbuf == 1
+    BOOST_CHECK_EQUAL(sender_info.GetTCPWindowSize(), receiver_rcvbuf);
+    BOOST_CHECK_EQUAL(receiver_info.GetTCPWindowSize(), sender_rcvbuf);
+#endif
+
+    BOOST_CHECK(!SocketIsClosed(socks.sender));
+    BOOST_CHECK(!SocketIsClosed(socks.receiver));
 }
 
 BOOST_AUTO_TEST_SUITE_END()
