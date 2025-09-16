@@ -81,6 +81,19 @@ BOOST_AUTO_TEST_CASE(move_assignment)
     BOOST_CHECK(SocketIsClosed(s2));
 }
 
+BOOST_AUTO_TEST_CASE(tcp_info)
+{
+    const SOCKET s1 = CreateSocket();
+    Sock* sock1 = new Sock(s1);
+    TCPInfo sock1_info{*sock1};
+    // Test that we can acquire a valid TCP_INFO structure on all
+    // supported platforms.
+    BOOST_CHECK(sock1_info.m_valid);
+    BOOST_CHECK(!SocketIsClosed(s1));
+
+    delete sock1;
+}
+
 #ifndef WIN32 // Windows does not have socketpair(2).
 
 static std::pair<Sock, Sock> CreateSocketPair()

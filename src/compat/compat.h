@@ -103,4 +103,11 @@ typedef SSIZE_T ssize_t;
 #define MSG_DONTWAIT 0
 #endif
 
+// Windows 10 1703 is required for TCP_INFO_v0
+// https://learn.microsoft.com/en-us/windows/win32/winprog/using-the-windows-headers#macros-for-conditional-declarations
+#if defined(WIN32) && NTDDI_VERSION >= 0x0A000003
+#define WIN32_TCPINFO_SUPPORTED
+#include <mstcpip.h>     // IWYU pragma: export
+#endif
+
 #endif // BITCOIN_COMPAT_COMPAT_H
