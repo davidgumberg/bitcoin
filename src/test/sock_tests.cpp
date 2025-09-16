@@ -17,6 +17,16 @@ using namespace std::chrono_literals;
 
 BOOST_FIXTURE_TEST_SUITE(sock_tests, BasicTestingSetup)
 
+static bool SocketIsClosed(const Sock &s)
+{
+    // Notice that if another thread is running and creates its own socket after `s` has been
+    // closed, it may be assigned the same file descriptor number. In this case, our test will
+    // wrongly pretend that the socket is not closed.
+    int type;
+    socklen_t len = sizeof(type);
+    return s.GetSockOpt(SOL_SOCKET, SO_TYPE, reinterpret_cast<char*>(&type), &len) == SOCKET_ERROR;
+}
+
 static bool SocketIsClosed(const SOCKET& s)
 {
     // Notice that if another thread is running and creates its own socket after `s` has been
@@ -178,6 +188,19 @@ BOOST_AUTO_TEST_CASE(recv_until_terminator_limit)
     BOOST_REQUIRE_NO_THROW(socks.sender->SendComplete("89a\n", timeout, interrupt));
 
     receiver.join();
+}
+
+BOOST_AUTO_TEST_CASE(tcp_info)
+{
+    socket_pair socks = socket_pair::create(/*connect=*/true);
+    TCPInfo sender_info{*socks.sender}, receiver_info{*socks.receiver};
+    // Test that we can acquire a valid TCP_INFO structure on all
+    // supported platforms.
+    BOOST_CHECK(sender_info.m_valid);
+    BOOST_CHECK(receiver_info.m_valid);
+
+    BOOST_CHECK(!SocketIsClosed(*socks.sender));
+    BOOST_CHECK(!SocketIsClosed(*socks.receiver));
 }
 
 BOOST_AUTO_TEST_SUITE_END()
