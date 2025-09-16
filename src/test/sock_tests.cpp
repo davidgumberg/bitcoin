@@ -91,6 +91,8 @@ BOOST_AUTO_TEST_CASE(tcp_info)
     BOOST_CHECK(sock1_info.m_valid);
     BOOST_CHECK(!SocketIsClosed(s1));
 
+    BOOST_CHECK(sock1_info.GetTCPWindowSize());
+
     delete sock1;
 }
 
