@@ -284,4 +284,44 @@ private:
 /** Return readable error string for a network error code */
 std::string NetworkErrorString(int err);
 
+/**
+ * Wrap platform specific data structures that contain information about TCP
+ * connections, tcp_info on /Linux|e.BSD/, tcp_connection_info on macos, and
+ * TCP_INFO_V0 on Windows.
+ */
+class TCPInfo
+{
+public:
+    bool m_valid{true};
+    socklen_t m_tcp_info_len;
+#if defined(__linux__) || defined(__FreeBSD__) || defined(__NetBSD__) || defined(__OpenBSD__)
+    struct tcp_info m_tcp_info;
+#elif defined(__APPLE__)
+    struct tcp_connection_info m_tcp_info;
+#elif defined(WIN32_TCPINFO_SUPPORTED)
+    struct TCP_INFO_v0 m_tcp_info;
+#endif
+
+    TCPInfo(Sock &s) {
+#if defined(__linux__) || defined(__FreeBSD__) || defined(__NetBSD__) || defined(__OpenBSD__)
+        m_valid = !s.GetSockOpt(IPPROTO_TCP, TCP_INFO, &m_tcp_info, &m_tcp_info_len);
+#elif defined(__APPLE__)
+        m_valid = !s.GetSockOpt(IPPROTO_TCP, TCP_CONNECTION_INFO, &m_tcp_info, &m_tcp_info_len);
+#elif defined(WIN32_TCPINFO_SUPPORTED)
+        DWORD version{0};
+        m_valid = !WSAIoctl(/*socket=*/s,
+                            /*dwIoControlCode=*/SIO_TCP_INFO,
+                            /*lpvInBuffer=*/&version,
+                            /*cbInBuffer=*/sizeof(version),
+                            /*lpvOutBuffer=*/&info
+                            /*cbOutBuffer=*/info_len,
+                            /*lpcpBytesReturned=*/&info_len,
+                            /*lpvOverlapped=*/nullptr,
+                            /*lpCompletionRoutine=*/nullptr);
+#else
+        m_valid = false;
+#endif
+    }
+};
+
 #endif // BITCOIN_UTIL_SOCK_H
