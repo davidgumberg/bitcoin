@@ -112,7 +112,7 @@ ReadStatus PartiallyDownloadedBlock::InitData(const CBlockHeaderAndShortTxIDs& c
         return READ_STATUS_FAILED; // Short ID collision
 
     std::vector<bool> have_txn(txn_available.size());
-    {
+    size_t extra_checks{};
 
     // Because extra pool is smaller than mempool and we fallback to it 60% of times we successfully
     // reconstruct a block iterate first the extrapool.
@@ -140,6 +140,7 @@ ReadStatus PartiallyDownloadedBlock::InitData(const CBlockHeaderAndShortTxIDs& c
                 }
             }
         }
+        extra_checks++;
         // Though ideally we'd continue scanning for the two-txn-match-shortid case,
         // the performance win of an early exit here is too good to pass up and worth
         // the extra risk.
@@ -147,6 +148,8 @@ ReadStatus PartiallyDownloadedBlock::InitData(const CBlockHeaderAndShortTxIDs& c
             break;
     }
 
+    size_t mempool_checks{0};
+    {
     LOCK(pool->cs);
     for (const auto& [wtxid, txit] : pool->txns_randomized) {
         uint64_t shortid = cmpctblock.GetShortID(wtxid);
@@ -166,6 +169,7 @@ ReadStatus PartiallyDownloadedBlock::InitData(const CBlockHeaderAndShortTxIDs& c
                 }
             }
         }
+        mempool_checks++;
         // Though ideally we'd continue scanning for the two-txn-match-shortid case,
         // the performance win of an early exit here is too good to pass up and worth
         // the extra risk.
