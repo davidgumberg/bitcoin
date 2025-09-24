@@ -2130,6 +2130,11 @@ void PeerManagerImpl::RelayTransaction(const Txid& txid, const Wtxid& wtxid)
         auto tx_relay = peer.GetTxRelay();
         if (!tx_relay) continue;
 
+        bool pause_send = m_connman.ForNode(it.first, [](CNode* node) {
+            return node->fPauseSend.load();
+        });
+        if (pause_send) continue;
+
         LOCK(tx_relay->m_tx_inventory_mutex);
         // Only queue transactions for announcement once the version handshake
         // is completed. The time of arrival for these transactions is
@@ -5491,6 +5496,8 @@ bool PeerManagerImpl::SendMessages(CNode* pto)
 
     // MaybeSendPing may have marked peer for disconnection
     if (pto->fDisconnect) return true;
+
+    if (pto->fPauseSend) return true;
 
     MaybeSendAddr(*pto, *peer, current_time);
 
