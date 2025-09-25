@@ -164,6 +164,11 @@ public:
         return f1 > f2;
     }
 
+    bool operator()(std::pair<Wtxid, CTxMemPoolEntryRef> a, std::pair<Wtxid, CTxMemPoolEntryRef> b) const
+    {
+        return operator()(a.second.get(), b.second.get());
+    }
+
     // Return the fee/size we're using for sorting this entry.
     template <typename T>
     FeeFrac GetModFeeAndSize(const T &a) const
@@ -369,8 +374,10 @@ public:
 
     using txiter = indexed_transaction_set::nth_index<0>::type::const_iterator;
 
-    using flat_tx_set = std::set<std::pair<Wtxid, txiter>, CompareTxMemPoolEntryByAncestorFee>;
+    using flat_tx_set = std::set<std::pair<Wtxid, CTxMemPoolEntryRef>, CompareTxMemPoolEntryByAncestorFee>;
     flat_tx_set txns_randomized GUARDED_BY(cs); //!< All transactions in mapTx with their wtxids, in arbitrary order
+
+    using flat_tx_set_type = // finish
 
     typedef std::set<txiter, CompareIteratorByHash> setEntries;
 

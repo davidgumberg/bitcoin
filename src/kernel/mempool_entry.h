@@ -185,7 +185,8 @@ public:
     Parents& GetMemPoolParents() const { return m_parents; }
     Children& GetMemPoolChildren() const { return m_children; }
 
-    mutable size_t idx_randomized; //!< Index in mempool's txns_randomized
+    mutable std::set<Wtxid>::const_iterator flat_iter; //!< Iterator to the flat mempool set.
+
     mutable Epoch::Marker m_epoch_marker; //!< epoch when last touched, useful for graph algorithms
 };
 

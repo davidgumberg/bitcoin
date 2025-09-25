@@ -507,8 +507,7 @@ void CTxMemPool::addNewTransaction(CTxMemPool::txiter newit, CTxMemPool::setEntr
     totalTxSize += entry.GetTxSize();
     m_total_fee += entry.GetFee();
 
-    txns_randomized.emplace(tx.GetWitnessHash(), newit);
-    newit->idx_randomized = txns_randomized.size() - 1;
+    newit->flat_iter = txns_randomized.emplace(tx.GetWitnessHash()).first;
 
     TRACEPOINT(mempool, added,
         entry.GetTx().GetHash().data(),
@@ -543,17 +542,7 @@ void CTxMemPool::removeUnchecked(txiter it, MemPoolRemovalReason reason)
 
     RemoveUnbroadcastTx(it->GetTx().GetHash(), true /* add logging because unchecked */);
 
-    if (txns_randomized.size() > 1) {
-        // Remove entry from txns_randomized by replacing it with the back and deleting the back.
-        txns_randomized[it->idx_randomized] = std::move(txns_randomized.back());
-        txns_randomized[it->idx_randomized].second->idx_randomized = it->idx_randomized;
-        txns_randomized.pop_back();
-        if (txns_randomized.size() * 2 < txns_randomized.capacity()) {
-            txns_randomized.shrink_to_fit();
-        }
-    } else {
-        txns_randomized.clear();
-    }
+    txns_randomized.erase(it->flat_iter);
 
     totalTxSize -= it->GetTxSize();
     m_total_fee -= it->GetFee();
