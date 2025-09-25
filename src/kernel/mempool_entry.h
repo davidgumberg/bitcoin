@@ -11,6 +11,7 @@
 #include <policy/policy.h>
 #include <policy/settings.h>
 #include <primitives/transaction.h>
+#include <txmempool.h>
 #include <util/epochguard.h>
 #include <util/overflow.h>
 

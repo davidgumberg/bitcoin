@@ -507,7 +507,7 @@ void CTxMemPool::addNewTransaction(CTxMemPool::txiter newit, CTxMemPool::setEntr
     totalTxSize += entry.GetTxSize();
     m_total_fee += entry.GetFee();
 
-    txns_randomized.emplace_back(tx.GetWitnessHash(), newit);
+    txns_randomized.emplace(tx.GetWitnessHash(), newit);
     newit->idx_randomized = txns_randomized.size() - 1;
 
     TRACEPOINT(mempool, added,

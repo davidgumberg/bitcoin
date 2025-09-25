@@ -368,7 +368,9 @@ public:
     indexed_transaction_set mapTx GUARDED_BY(cs);
 
     using txiter = indexed_transaction_set::nth_index<0>::type::const_iterator;
-    std::vector<std::pair<Wtxid, txiter>> txns_randomized GUARDED_BY(cs); //!< All transactions in mapTx with their wtxids, in arbitrary order
+
+    using flat_tx_set = std::set<std::pair<Wtxid, txiter>, CompareTxMemPoolEntryByAncestorFee>;
+    flat_tx_set txns_randomized GUARDED_BY(cs); //!< All transactions in mapTx with their wtxids, in arbitrary order
 
     typedef std::set<txiter, CompareIteratorByHash> setEntries;
 
