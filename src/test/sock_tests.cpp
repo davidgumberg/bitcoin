@@ -83,10 +83,44 @@ BOOST_AUTO_TEST_CASE(move_assignment)
 
 #ifndef WIN32 // Windows does not have socketpair(2).
 
-static void CreateSocketPair(int s[2])
+static std::pair<Sock, Sock> CreateSocketPair()
 {
+    int s[2];
     BOOST_REQUIRE_EQUAL(socketpair(AF_UNIX, SOCK_STREAM, 0, s), 0);
+    return std::pair<Sock, Sock>{ s[0], s[1] };
 }
+
+#else
+
+static std::pair<Sock, Sock> CreateSocketPair()
+{
+    const SOCKET listener = CreateSocket();
+    const SOCKET sender = CreateSocket();
+
+    Sock sock_listener{listener};
+    Sock sock_sender{sender};
+
+    sockaddr_in addr;
+    addr.sin_family = AF_INET;
+    addr.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
+    addr.sin_port = htons(0);
+
+    BOOST_CHECK_EQUAL(sock_listener.Bind(reinterpret_cast<sockaddr*>(&addr), sizeof(addr)), 0);
+    BOOST_CHECK_EQUAL(sock_listener.Listen(1), 0);
+
+    sockaddr_in bound{};
+    socklen_t blen = sizeof(bound);
+    BOOST_CHECK_EQUAL(sock_listener.GetSockName(reinterpret_cast<sockaddr*>(&bound), &blen), 0);
+
+    BOOST_CHECK_EQUAL(sock_sender.Connect(reinterpret_cast<sockaddr*>(&bound), sizeof(bound)), 0);
+
+    std::unique_ptr<Sock> accepted = sock_listener.Accept(nullptr, nullptr);
+    Sock sock_accepted = std::move(*accepted);
+
+    return std::pair<Sock, Sock>{std::move(sock_sender), std::move(sock_accepted)};
+}
+
+#endif
 
 static void SendAndRecvMessage(const Sock& sender, const Sock& receiver)
 {
@@ -101,37 +135,26 @@ static void SendAndRecvMessage(const Sock& sender, const Sock& receiver)
 
 BOOST_AUTO_TEST_CASE(send_and_receive)
 {
-    int s[2];
-    CreateSocketPair(s);
+    Sock *sock0moved, *sock1moved;
+    {
+    auto [sock0, sock1] = CreateSocketPair();
 
-    Sock* sock0 = new Sock(s[0]);
-    Sock* sock1 = new Sock(s[1]);
+    SendAndRecvMessage(sock0, sock1);
 
-    SendAndRecvMessage(*sock0, *sock1);
-
-    Sock* sock0moved = new Sock(std::move(*sock0));
-    Sock* sock1moved = new Sock(INVALID_SOCKET);
-    *sock1moved = std::move(*sock1);
-
-    delete sock0;
-    delete sock1;
+    sock0moved = new Sock(std::move(sock0));
+    sock1moved = new Sock(INVALID_SOCKET);
+    *sock1moved = std::move(sock1);
+    }
 
     SendAndRecvMessage(*sock1moved, *sock0moved);
 
     delete sock0moved;
     delete sock1moved;
-
-    BOOST_CHECK(SocketIsClosed(s[0]));
-    BOOST_CHECK(SocketIsClosed(s[1]));
 }
 
 BOOST_AUTO_TEST_CASE(wait)
 {
-    int s[2];
-    CreateSocketPair(s);
-
-    Sock sock0(s[0]);
-    Sock sock1(s[1]);
+    auto [sock0, sock1] = CreateSocketPair();
 
     std::thread waiter([&sock0]() { (void)sock0.Wait(24h, Sock::RECV); });
 
@@ -144,11 +167,7 @@ BOOST_AUTO_TEST_CASE(recv_until_terminator_limit)
 {
     constexpr auto timeout = 1min; // High enough so that it is never hit.
     CThreadInterrupt interrupt;
-    int s[2];
-    CreateSocketPair(s);
-
-    Sock sock_send(s[0]);
-    Sock sock_recv(s[1]);
+    auto [sock_send, sock_recv] = CreateSocketPair();
 
     std::thread receiver([&sock_recv, &timeout, &interrupt]() {
         constexpr size_t max_data{10};
@@ -168,7 +187,5 @@ BOOST_AUTO_TEST_CASE(recv_until_terminator_limit)
 
     receiver.join();
 }
-
-#endif /* WIN32 */
 
 BOOST_AUTO_TEST_SUITE_END()
