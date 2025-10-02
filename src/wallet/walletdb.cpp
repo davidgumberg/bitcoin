@@ -63,6 +63,40 @@ const std::string WATCHS{"watchs"};
 const std::unordered_set<std::string> LEGACY_TYPES{CRYPTED_KEY, CSCRIPT, DEFAULTKEY, HDCHAIN, KEYMETA, KEY, OLD_KEY, POOL, WATCHMETA, WATCHS};
 } // namespace DBKeys
 
+std::optional<bilingual_str> DBErrorsToString(DBErrors error, std::string filename)
+{
+    switch (error) {
+    case DBErrors::LOAD_OK:
+        return std::nullopt;
+    case DBErrors::NONCRITICAL_ERROR:
+        return strprintf(_("Error reading %s! All keys read correctly, but transaction data"
+                                       " or address metadata may be missing or incorrect."),
+            filename);
+    case DBErrors::NEED_RESCAN:
+        return strprintf(_("Error reading %s! Transaction data may be missing or incorrect."
+                                       " Rescanning wallet."), filename);
+    case DBErrors::CORRUPT:
+        return strprintf(_("Error loading %s: Wallet corrupted"), filename);
+    case DBErrors::TOO_NEW:
+        return strprintf(_("Error loading %s: Wallet requires newer version of %s"), filename, CLIENT_NAME);
+    case DBErrors::EXTERNAL_SIGNER_SUPPORT_REQUIRED:
+        return strprintf(_("Error loading %s: External signer wallet being loaded without external signer support compiled"), filename);
+    case DBErrors::NEED_REWRITE:
+        return strprintf(_("Wallet needed to be rewritten: restart %s to complete"), CLIENT_NAME);
+    case DBErrors::UNKNOWN_DESCRIPTOR:
+        return strprintf(_("Unrecognized descriptor found. Loading wallet %s\n\n"
+                            "The wallet might have been created on a newer version.\n"
+                            "Please try running the latest software version.\n"), filename);
+    case DBErrors::UNEXPECTED_LEGACY_ENTRY:
+        return strprintf(_("Unexpected legacy entry in descriptor wallet found. Loading wallet %s\n\n"
+                            "The wallet might have been tampered with or created with malicious intent.\n"), filename);
+    case DBErrors::LEGACY_WALLET:
+        return strprintf(_("Error loading %s: Wallet is a legacy wallet. Please migrate to a descriptor wallet using the migration tool (migratewallet RPC)."), filename);
+    case DBErrors::LOAD_FAIL:
+        return strprintf(_("Error loading %s"), filename);
+    }
+}
+
 void LogDBInfo()
 {
     // Add useful DB information here. This will be printed during startup.

@@ -11,6 +11,7 @@
 #include <script/sign.h>
 #include <wallet/db.h>
 #include <wallet/walletutil.h>
+#include <util/translation.h>
 
 #include <cstdint>
 #include <string>
@@ -54,6 +55,8 @@ enum class DBErrors : int
     LEGACY_WALLET = 9,
     CORRUPT = 10,
 };
+
+std::optional<bilingual_str> DBErrorsToString(DBErrors error, std::string filename);
 
 namespace DBKeys {
 extern const std::string ACENTRY;
