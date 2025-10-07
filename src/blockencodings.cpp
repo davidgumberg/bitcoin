@@ -17,7 +17,7 @@
 
 #include <unordered_map>
 
-CBlockHeaderAndShortTxIDs::CBlockHeaderAndShortTxIDs(const CBlock& block, const uint64_t nonce, const std::set<uint32_t>& prefill_candidates) :
+CBlockHeaderAndShortTxIDs::CBlockHeaderAndShortTxIDs(const CBlock& block, const uint64_t nonce, const std::set<PrefillCandidate>& prefill_candidates) :
         nonce(nonce), header(block) {
     prefilledtxn.reserve(prefill_candidates.size());
     shorttxids.reserve(block.vtx.size() - prefill_candidates.size());
@@ -26,7 +26,7 @@ CBlockHeaderAndShortTxIDs::CBlockHeaderAndShortTxIDs(const CBlock& block, const 
     uint16_t prefill_index = 0;
     for (uint16_t i = 0; i < block.vtx.size(); i++) {
         // Always prefill the coinbase transaction.
-        if(prefill_candidates.contains(i) || i == 0) {
+        if(prefill_candidates.contains({i, 0}) || i == 0) {
             prefilledtxn.push_back({prefill_index, block.vtx[i]});
             prefill_index = 0;
         } else {
@@ -94,7 +94,7 @@ ReadStatus PartiallyDownloadedBlock::InitData(const CBlockHeaderAndShortTxIDs& c
             // that WE want to prefill.
             LOCK(pool->cs); // TODO: locking in a tight loop?
             if (!pool->exists(cmpctblock.prefilledtxn[i].tx->GetWitnessHash())) {
-                prefill_candidates.insert(lastprefilledindex);
+                prefill_candidates.emplace(lastprefilledindex, cmpctblock.prefilledtxn[i].tx->GetTotalSize());
             }
         }
     }
@@ -163,7 +163,7 @@ ReadStatus PartiallyDownloadedBlock::InitData(const CBlockHeaderAndShortTxIDs& c
         if (idit != shorttxids.end()) {
             if (!have_txn[idit->second]) {
                 txn_available[idit->second] = extra_txn[i].second;
-                prefill_candidates.insert(idit->second);
+                prefill_candidates.emplace(idit->second, extra_txn[i].second->GetTotalSize());
                 have_txn[idit->second]  = true;
                 mempool_count++;
                 extra_count++;
@@ -202,7 +202,7 @@ bool PartiallyDownloadedBlock::IsTxAvailable(size_t index) const
     return txn_available[index] != nullptr;
 }
 
-std::set<uint32_t> PartiallyDownloadedBlock::PrefillCandidates() const
+std::set<PrefillCandidate> PartiallyDownloadedBlock::PrefillCandidates() const
 {
     return prefill_candidates;
 }
@@ -222,9 +222,11 @@ ReadStatus PartiallyDownloadedBlock::FillBlock(CBlock& block, const std::vector<
             if (vtx_missing.size() <= tx_missing_offset) {
                 return READ_STATUS_INVALID;
             }
-            prefill_candidates.insert(i);
             block.vtx[i] = vtx_missing[tx_missing_offset++];
-            tx_missing_size += block.vtx[i]->GetTotalSize();
+            const unsigned int tx_size{block.vtx[i]->GetTotalSize()};
+            tx_missing_size += tx_size;
+
+            prefill_candidates.emplace(i, tx_size);
         } else
             block.vtx[i] = std::move(txn_available[i]);
     }
