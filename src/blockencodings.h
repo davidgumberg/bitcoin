@@ -128,6 +128,7 @@ public:
      */
     CBlockHeaderAndShortTxIDs(const CBlock& block, const uint64_t nonce, const std::set<PrefillCandidate>& prefill_candidates, std::optional<uint32_t> prefill_limit = std::nullopt);
 
+    uint64_t GetSerializedSize() const;
     uint64_t GetShortID(const Wtxid& wtxid) const;
 
     size_t BlockTxCount() const { return shorttxids.size() + prefilledtxn.size(); }

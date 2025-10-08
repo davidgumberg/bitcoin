@@ -2,6 +2,7 @@
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
+#include "serialize.h"
 #include <blockencodings.h>
 #include <chainparams.h>
 #include <common/system.h>
@@ -23,18 +24,36 @@ CBlockHeaderAndShortTxIDs::CBlockHeaderAndShortTxIDs(const CBlock& block, const 
     shorttxids.reserve(block.vtx.size() - prefill_candidates.size());
     FillShortTxIDSelector();
 
-    uint16_t prefill_index = 0;
-    for (uint16_t i = 0; i < block.vtx.size(); i++) {
-        // Always prefill the coinbase transaction.
-        if(prefill_candidates.contains({i, 0}) || i == 0) {
-            prefilledtxn.push_back({prefill_index, block.vtx[i]});
-            prefill_index = 0;
-        } else {
-            const CTransaction& tx = *block.vtx[i];
-            shorttxids.push_back(GetShortID(tx.GetWitnessHash()));
-            prefill_index++;
-        }
+    prefilledtxn.emplace_back(0, block.vtx[0]);
+    for (uint16_t i = 1; i < block.vtx.size(); i++) {
+        const CTransaction& tx = *block.vtx[i];
+        shorttxids.push_back(GetShortID(tx.GetWitnessHash()));
     }
+
+    if (
+
+    for (uint16_t i = 1; i < block.vtx.size(); i++) {
+
+    }
+}
+
+// https://github.com/bitcoin/bips/blob/master/bip-0152.mediawiki#headerandshortids
+uint64_t CBlockHeaderAndShortTxIDs::GetSerializedSize() const {
+    // Block Header (80 bytes) + nonce (8 bytes)
+    uint64_t total{88};
+
+    // Short id: CompactSize Length + count * 6.
+    const auto shortid_count = shorttxids.size();
+    total += GetSizeOfCompactSize(shortid_count);
+    total += shortid_count * SHORTTXIDS_LENGTH;
+
+    // Prefill: CompactSize Length + size of prefills
+    total += GetSizeOfCompactSize(prefilledtxn.size());
+    for (const auto &prefill : prefilledtxn) {
+        total += prefill.tx->GetTotalSize();
+    }
+
+    return total;
 }
 
 void CBlockHeaderAndShortTxIDs::FillShortTxIDSelector() const {
