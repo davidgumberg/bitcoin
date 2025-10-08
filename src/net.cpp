@@ -3920,6 +3920,16 @@ std::optional<std::pair<CNetMessage, bool>> CNode::PollMessage()
     return std::make_pair(std::move(msgs.front()), !m_msg_process_queue.empty());
 }
 
+uint32_t CNode::WindowBytesAvailable()
+{
+    LOCK(m_sock_mutex);
+    auto tcp_info = TCPInfo{*m_sock};
+    auto window_size = tcp_info.GetTCPWindowSize();
+    auto os_bytes_inflight = m_sock->GetOSBytesQueued(tcp_info);
+
+    return window_size - os_bytes_inflight;
+}
+
 bool CConnman::NodeFullyConnected(const CNode* pnode)
 {
     return pnode && pnode->fSuccessfullyConnected && !pnode->fDisconnect;
