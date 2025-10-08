@@ -17,7 +17,7 @@
 
 #include <unordered_map>
 
-CBlockHeaderAndShortTxIDs::CBlockHeaderAndShortTxIDs(const CBlock& block, const uint64_t nonce, const std::set<PrefillCandidate>& prefill_candidates) :
+CBlockHeaderAndShortTxIDs::CBlockHeaderAndShortTxIDs(const CBlock& block, const uint64_t nonce, const std::set<PrefillCandidate>& prefill_candidates, std::optional<uint32_t> prefill_limit) :
         nonce(nonce), header(block) {
     prefilledtxn.reserve(prefill_candidates.size());
     shorttxids.reserve(block.vtx.size() - prefill_candidates.size());

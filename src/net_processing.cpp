@@ -2357,7 +2357,7 @@ void PeerManagerImpl::ProcessGetBlockData(CNode& pfrom, Peer& peer, const CInv& 
                             prefill_candidates = m_compact_block_prefill_candidates.second;
                         }
                     }
-                    CBlockHeaderAndShortTxIDs cmpctblock{*pblock, m_rng.rand64(), prefill_candidates};
+                    CBlockHeaderAndShortTxIDs cmpctblock{*pblock, m_rng.rand64(), prefill_candidates, pfrom.WindowBytesAvailable()};
                     MakeAndPushMessage(pfrom, NetMsgType::CMPCTBLOCK, cmpctblock);
                 }
             } else {

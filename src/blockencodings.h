@@ -126,7 +126,7 @@ public:
      * @param[in]  prefill_candidates  A set of transaction candidate indexes that should be prefilled for compact block annoucements
 
      */
-    CBlockHeaderAndShortTxIDs(const CBlock& block, const uint64_t nonce, const std::set<PrefillCandidate>& prefill_candidates);
+    CBlockHeaderAndShortTxIDs(const CBlock& block, const uint64_t nonce, const std::set<PrefillCandidate>& prefill_candidates, std::optional<uint32_t> prefill_limit = std::nullopt);
 
     uint64_t GetShortID(const Wtxid& wtxid) const;
 
