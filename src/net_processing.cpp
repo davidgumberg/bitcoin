@@ -707,6 +707,10 @@ private:
         EXCLUSIVE_LOCKS_REQUIRED(g_msgproc_mutex);
 
     void SendBlockTransactions(CNode& pfrom, Peer& peer, const CBlock& block, const BlockTransactionsRequest& req);
+    /** Send a compact block for index if it's our m_most_recent_pow_block and
+     *  return true, otherwise return false.
+     */
+    bool SendCompactBlock(CNode* pnode, const CBlockIndex* pindex) EXCLUSIVE_LOCKS_REQUIRED(!m_most_recent_block_mutex);
 
     /** Send a message to a peer */
     void PushMessage(CNode& node, CSerializedNetMsg&& msg) const { m_connman.PushMessage(&node, std::move(msg)); }
@@ -2003,8 +2007,8 @@ void PeerManagerImpl::NewPoWValidBlock(const CBlockIndex *pindex, const std::sha
 
     if (!DeploymentActiveAt(*pindex, m_chainman, Consensus::DEPLOYMENT_SEGWIT)) return;
 
-    uint256 hashBlock(pblock->GetHash());
     {
+        uint256 hashBlock(pblock->GetHash());
         auto most_recent_block_txs = std::make_unique<std::map<GenTxid, CTransactionRef>>();
         for (const auto& tx : pblock->vtx) {
             most_recent_block_txs->emplace(tx->GetHash(), tx);
@@ -2014,11 +2018,11 @@ void PeerManagerImpl::NewPoWValidBlock(const CBlockIndex *pindex, const std::sha
         LOCK(m_most_recent_block_mutex);
         m_most_recent_pow_block.hash = hashBlock;
         m_most_recent_pow_block.block = pblock;
-        m_most_recent_pow_block.cmpctblock_msg_fut = lazy_ser;
+        m_most_recent_pow_block.cmpctblock_msg_fut = std::move(lazy_ser);
         m_most_recent_pow_block.txs = std::move(most_recent_block_txs);
     }
 
-    m_connman.ForEachNode([this, pindex, &lazy_ser, &hashBlock](CNode* pnode) EXCLUSIVE_LOCKS_REQUIRED(::cs_main) {
+    m_connman.ForEachNode([this, pindex](CNode* pnode) EXCLUSIVE_LOCKS_REQUIRED(::cs_main) {
         AssertLockHeld(::cs_main);
 
         if (pnode->GetCommonVersion() < INVALID_CB_NO_BAN_VERSION || pnode->fDisconnect)
@@ -2028,16 +2032,33 @@ void PeerManagerImpl::NewPoWValidBlock(const CBlockIndex *pindex, const std::sha
         // If the peer has, or we announced to them the previous block already,
         // but we don't think they have this one, go ahead and announce it
         if (state.m_requested_hb_cmpctblocks && !PeerHasHeader(&state, pindex) && PeerHasHeader(&state, pindex->pprev)) {
-
-            LogDebug(BCLog::NET, "%s sending header-and-ids %s to peer=%d\n", "PeerManager::NewPoWValidBlock",
-                    hashBlock.ToString(), pnode->GetId());
-
-            const CSerializedNetMsg& ser_cmpctblock{lazy_ser.get()};
-            PushMessage(*pnode, ser_cmpctblock.Copy());
-            state.pindexBestHeaderSent = pindex;
+            SendCompactBlock(pnode, pindex);
         }
     });
 }
+
+bool PeerManagerImpl::SendCompactBlock(CNode* pnode, const CBlockIndex* pindex)
+{
+    LOCK(m_most_recent_block_mutex);
+    if (m_most_recent_pow_block.hash != pindex->GetBlockHash()) {
+        return false;
+    }
+
+    if (!m_most_recent_pow_block.cmpctblock_msg_fut.valid()) {
+        return false;
+    }
+
+    LogDebug(BCLog::NET, "%s sending header-and-ids %s to peer=%d\n", "PeerManager::NewPoWValidBlock",
+            m_most_recent_pow_block.hash.ToString(), pnode->GetId());
+    PushMessage(*pnode, m_most_recent_pow_block.cmpctblock_msg_fut.get().Copy());
+    {
+        LOCK(cs_main);
+        CNodeState &state = *State(pnode->GetId());
+        state.pindexBestHeaderSent = pindex;
+    }
+    return true;
+}
+
 
 /**
  * Update our best height and announce any block hashes which weren't previously
@@ -5655,26 +5676,17 @@ bool PeerManagerImpl::SendMessages(CNode* pto)
                 if (vHeaders.size() == 1 && state.m_requested_hb_cmpctblocks) {
                     // We only send up to 1 block as header-and-ids, as otherwise
                     // probably means we're doing an initial-ish-sync or they're slow
-                    LogDebug(BCLog::NET, "%s sending header-and-ids %s to peer=%d\n", __func__,
-                            vHeaders.front().GetHash().ToString(), pto->GetId());
 
-                    std::optional<CSerializedNetMsg> cached_cmpctblock_msg;
-                    {
-                        LOCK(m_most_recent_block_mutex);
-                        if (m_most_recent_pow_block.hash == pBestIndex->GetBlockHash()) {
-                            cached_cmpctblock_msg = m_most_recent_pow_block.cmpctblock_msg_fut.get().Copy();
-                        }
-                    }
-                    if (cached_cmpctblock_msg.has_value()) {
-                        PushMessage(*pto, std::move(cached_cmpctblock_msg.value()));
-                    } else {
+                    if (!SendCompactBlock(pto, pBestIndex)) {
+                        LogDebug(BCLog::NET, "%s sending header-and-ids %s to peer=%d\n", __func__,
+                                vHeaders.front().GetHash().ToString(), pto->GetId());
                         CBlock block;
                         const bool ret{m_chainman.m_blockman.ReadBlock(block, *pBestIndex)};
                         assert(ret);
                         CBlockHeaderAndShortTxIDs cmpctblock{block, m_rng.rand64()};
                         MakeAndPushMessage(*pto, NetMsgType::CMPCTBLOCK, cmpctblock);
+                        state.pindexBestHeaderSent = pBestIndex;
                     }
-                    state.pindexBestHeaderSent = pBestIndex;
                 } else if (peer->m_prefers_headers) {
                     if (vHeaders.size() > 1) {
                         LogDebug(BCLog::NET, "%s: %u headers, range (%s, %s), to peer=%d\n", __func__,
