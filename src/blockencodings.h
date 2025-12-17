@@ -135,7 +135,16 @@ public:
 class PartiallyDownloadedBlock {
 protected:
     std::vector<CTransactionRef> txn_available;
+
     size_t prefilled_count = 0, mempool_count = 0, extra_count = 0;
+    size_t prefilled_size = 0, mempool_size = 0, extra_size = 0;
+
+    // Probably research only code, how many prefilled txn's were redundant?
+    // Either it was already present in our mempool...
+    size_t redundant_prefilled_mp_count = 0, redundant_prefilled_mp_size = 0;
+    // or maybe it was present in our extrapool...
+    size_t redundant_prefilled_ep_count = 0, redundant_prefilled_ep_size = 0;
+
     const CTxMemPool* pool;
     // Keep track of the block position of transactions that we didn't have in
     // our mempool while reconstructing this compact block. We can use these to
