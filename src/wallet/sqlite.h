@@ -53,11 +53,11 @@ private:
     SQLiteDatabase& m_database;
     std::unique_ptr<SQliteExecHandler> m_exec_handler{std::make_unique<SQliteExecHandler>()};
 
-    std::unique_ptr<SQLiteStatement> m_read_stmt{nullptr};
-    std::unique_ptr<SQLiteStatement> m_insert_stmt{nullptr};
-    std::unique_ptr<SQLiteStatement> m_overwrite_stmt{nullptr};
-    std::unique_ptr<SQLiteStatement> m_delete_stmt{nullptr};
-    std::unique_ptr<SQLiteStatement> m_delete_prefix_stmt{nullptr};
+    static constexpr std::string_view READ_STMT{"SELECT value FROM main WHERE key = ?"};
+    static constexpr std::string_view INSERT_STMT{"INSERT INTO main VALUES(?, ?)"};
+    static constexpr std::string_view OVERWRITE_STMT{"INSERT or REPLACE into main values(?, ?)"};
+    static constexpr std::string_view DELETE_STMT{"DELETE FROM main WHERE key = ?"};
+    static constexpr std::string_view DELETE_PREFIX_STMT{"DELETE FROM main WHERE instr(key, ?) = 1"};
 
     /** Whether this batch has started a database transaction and whether it owns SQLiteDatabase::m_write_semaphore.
      * If the batch starts a db tx, it acquires the semaphore and sets this to true, keeping the semaphore
@@ -71,8 +71,7 @@ private:
      */
     bool m_txn{false};
 
-    void SetupSQLStatements();
-    bool ExecStatement(SQLiteStatement* stmt);
+    bool ExecStatement(SQLiteStatement&& stmt);
     bool ExecEraseStatement(SQLiteStatement* stmt, std::span<const std::byte> blob);
 
     bool ReadKey(DataStream&& key, DataStream& value) override;

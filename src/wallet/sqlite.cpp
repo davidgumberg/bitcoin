@@ -66,10 +66,10 @@ private:
     sqlite3_stmt* m_stmt{nullptr};
 
 public:
-    explicit SQLiteStatement(sqlite3& db, const std::string& stmt_text)
+    explicit SQLiteStatement(sqlite3& db, const std::string_view& stmt_text)
         : m_db(db)
     {
-        int res = sqlite3_prepare_v2(&m_db, stmt_text.c_str(), -1, &m_stmt, nullptr);
+        int res = sqlite3_prepare_v2(&m_db, stmt_text.data(), stmt_text.length(), &m_stmt, nullptr);
         if (res != SQLITE_OK) {
             throw std::runtime_error(strprintf(
                 "SQLiteStatement: Failed to prepare SQL statement '%s': %s\n", stmt_text, sqlite3_errstr(res)));
@@ -195,15 +195,6 @@ SQLiteDatabase::SQLiteDatabase(const fs::path& dir_path, const fs::path& file_pa
         Cleanup();
         throw;
     }
-}
-
-void SQLiteBatch::SetupSQLStatements()
-{
-    m_read_stmt = std::make_unique<SQLiteStatement>(*m_database.m_db, "SELECT value FROM main WHERE key = ?");
-    m_insert_stmt = std::make_unique<SQLiteStatement>(*m_database.m_db, "INSERT INTO main VALUES(?, ?)");
-    m_overwrite_stmt = std::make_unique<SQLiteStatement>(*m_database.m_db, "INSERT or REPLACE into main values(?, ?)");
-    m_delete_stmt = std::make_unique<SQLiteStatement>(*m_database.m_db, "DELETE FROM main WHERE key = ?");
-    m_delete_prefix_stmt = std::make_unique<SQLiteStatement>(*m_database.m_db, "DELETE FROM main WHERE instr(key, ?) = 1");
 }
 
 SQLiteDatabase::~SQLiteDatabase()
@@ -425,8 +416,6 @@ SQLiteBatch::SQLiteBatch(SQLiteDatabase& database)
 {
     // Make sure we have a db handle
     assert(m_database.m_db);
-
-    SetupSQLStatements();
 }
 
 SQLiteBatch::~SQLiteBatch()
@@ -451,13 +440,6 @@ void SQLiteBatch::Close()
         }
     }
 
-    // Free all of the prepared statements
-    m_read_stmt.reset();
-    m_insert_stmt.reset();
-    m_overwrite_stmt.reset();
-    m_delete_stmt.reset();
-    m_delete_prefix_stmt.reset();
-
     if (force_conn_refresh) {
         m_database.Close();
         try {
@@ -475,38 +457,34 @@ void SQLiteBatch::Close()
 bool SQLiteBatch::ReadKey(DataStream&& key, DataStream& value)
 {
     if (!m_database.m_db) return false;
-    assert(m_read_stmt);
+    SQLiteStatement stmt{*m_database.m_db, READ_STMT};
 
     // Bind: leftmost parameter in statement is index 1
-    if (!m_read_stmt->Bind(1, key, "key")) return false;
-    int res = m_read_stmt->Step();
+    if (!stmt.Bind(1, key, "key")) return false;
+    int res = stmt.Step();
     if (res != SQLITE_ROW) {
         if (res != SQLITE_DONE) {
             // SQLITE_DONE means "not found", don't log an error in that case.
             LogWarning("Unable to execute read statement: %s", sqlite3_errstr(res));
         }
-        m_read_stmt->Reset();
         return false;
     }
     // Leftmost column in result is index 0
     value.clear();
-    value.write(m_read_stmt->Column<std::span<const std::byte>>(0));
+    value.write(stmt.Column<std::span<const std::byte>>(0));
 
-    m_read_stmt->Reset();
     return true;
 }
 
-bool SQLiteBatch::ExecStatement(SQLiteStatement* stmt)
+bool SQLiteBatch::ExecStatement(SQLiteStatement &&stmt)
 {
     if (!m_database.m_db) return false;
-    assert(stmt);
 
     // Acquire semaphore if not previously acquired when creating a transaction.
     if (!m_txn) m_database.m_write_semaphore.acquire();
 
     // Execute
-    int res = stmt->Step();
-    stmt->Reset();
+    int res = stmt.Step();
     if (res != SQLITE_DONE) {
         LogError("Unable to execute statement: %s\n", sqlite3_errstr(res));
     }
@@ -519,51 +497,43 @@ bool SQLiteBatch::ExecStatement(SQLiteStatement* stmt)
 bool SQLiteBatch::WriteKey(DataStream&& key, DataStream&& value, bool overwrite)
 {
     if (!m_database.m_db) return false;
-    assert(m_insert_stmt && m_overwrite_stmt);
-
-    SQLiteStatement* stmt;
-    if (overwrite) {
-        stmt = m_overwrite_stmt.get();
-    } else {
-        stmt = m_insert_stmt.get();
-    }
+    SQLiteStatement stmt{*m_database.m_db, overwrite ? OVERWRITE_STMT : INSERT_STMT};
 
     // Bind: leftmost parameter in statement is index 1
     // Insert index 1 is key, 2 is value
-    if (!stmt->Bind(1, key, "key")) return false;
-    if (!stmt->Bind(2, value, "value")) return false;
-    return ExecStatement(stmt);
-}
-
-bool SQLiteBatch::ExecEraseStatement(SQLiteStatement* stmt, std::span<const std::byte> blob)
-{
-    if (!m_database.m_db) return false;
-    assert(stmt);
-
-    // Bind: leftmost parameter in statement is index 1
-    if (!stmt->Bind(1, blob, "key")) return false;
-    return ExecStatement(stmt);
+    if (!stmt.Bind(1, key, "key")) return false;
+    if (!stmt.Bind(2, value, "value")) return false;
+    return ExecStatement(std::move(stmt));
 }
 
 bool SQLiteBatch::EraseKey(DataStream&& key)
 {
-    return ExecEraseStatement(m_delete_stmt.get(), key);
+    if (!m_database.m_db) return false;
+    SQLiteStatement stmt{*m_database.m_db, DELETE_STMT };
+
+    // Bind: leftmost parameter in statement is index 1
+    if (!stmt.Bind(1, key, "key")) return false;
+    return ExecStatement(std::move(stmt));
 }
 
 bool SQLiteBatch::ErasePrefix(std::span<const std::byte> prefix)
 {
-    return ExecEraseStatement(m_delete_prefix_stmt.get(), prefix);
+    if (!m_database.m_db) return false;
+    SQLiteStatement stmt{*m_database.m_db, DELETE_PREFIX_STMT};
+
+    // Bind: leftmost parameter in statement is index 1
+    if (!stmt.Bind(1, prefix, "key")) return false;
+    return ExecStatement(std::move(stmt));
 }
 
 bool SQLiteBatch::HasKey(DataStream&& key)
 {
     if (!m_database.m_db) return false;
-    assert(m_read_stmt);
+    SQLiteStatement stmt{*m_database.m_db, READ_STMT};
 
     // Bind: leftmost parameter in statement is index 1
-    if (!m_read_stmt->Bind(1, key, "key")) return false;
-    int res = m_read_stmt->Step();
-    m_read_stmt->Reset();
+    if (!stmt.Bind(1, key, "key")) return false;
+    int res = stmt.Step();
     return res == SQLITE_ROW;
 }
 
