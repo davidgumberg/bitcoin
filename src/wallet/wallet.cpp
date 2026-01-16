@@ -3109,7 +3109,7 @@ std::shared_ptr<CWallet> CWallet::LoadExisting(WalletContext& context, const std
     walletInstance->WalletLogPrintf("Wallet completed loading in %15dms\n", Ticks<std::chrono::milliseconds>(SteadyClock::now() - start));
 
     // Try to top up keypool. No-op if the wallet is locked.
-    walletInstance->TopUpKeyPool();
+    //walletInstance->TopUpKeyPool();
 
     if (chain && !AttachChain(walletInstance, *chain, rescan_required, error, warnings)) {
         walletInstance->m_chain_notifications_handler.reset(); // Reset this pointer so that the wallet will actually be unloaded

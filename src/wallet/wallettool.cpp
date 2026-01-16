@@ -4,6 +4,7 @@
 
 #include <bitcoin-build-config.h> // IWYU pragma: keep
 
+#include <wallet/context.h>
 #include <wallet/wallettool.h>
 
 #include <common/args.h>
@@ -17,30 +18,7 @@
 namespace wallet {
 namespace WalletTool {
 
-// The standard wallet deleter function blocks on the validation interface
-// queue, which doesn't exist for the bitcoin-wallet. Define our own
-// deleter here.
-static void WalletToolReleaseWallet(CWallet* wallet)
-{
-    wallet->WalletLogPrintf("Releasing wallet\n");
-    wallet->Close();
-    delete wallet;
-}
-
-static void WalletCreate(CWallet* wallet_instance, uint64_t wallet_creation_flags)
-{
-    LOCK(wallet_instance->cs_wallet);
-
-    wallet_instance->InitWalletFlags(wallet_creation_flags);
-
-    Assert(wallet_instance->IsWalletFlagSet(WALLET_FLAG_DESCRIPTORS));
-    wallet_instance->SetupDescriptorScriptPubKeyMans();
-
-    tfm::format(std::cout, "Topping up keypool...\n");
-    wallet_instance->TopUpKeyPool();
-}
-
-static std::shared_ptr<CWallet> MakeWallet(const std::string& name, const fs::path& path, DatabaseOptions options)
+static std::shared_ptr<CWallet> CreateWallet(const std::string& name, const fs::path& path, DatabaseOptions options, ArgsManager &args)
 {
     DatabaseStatus status;
     bilingual_str error;
@@ -51,30 +29,26 @@ static std::shared_ptr<CWallet> MakeWallet(const std::string& name, const fs::pa
         return nullptr;
     }
 
-    // dummy chain interface
-    std::shared_ptr<CWallet> wallet_instance{new CWallet(/*chain=*/nullptr, name, std::move(database)), WalletToolReleaseWallet};
-    DBErrors load_wallet_ret;
-    try {
-        load_wallet_ret = wallet_instance->PopulateWalletFromDB(error, warnings);
-    } catch (const std::runtime_error&) {
-        tfm::format(std::cerr, "Error loading %s. Is wallet being used by another process?\n", name);
+    WalletContext empty_context;
+    empty_context.args = &args;
+    std::shared_ptr<CWallet> wallet_instance{CWallet::CreateNew(empty_context, name, std::move(database), options.create_flags, error, warnings)};
+    return wallet_instance;
+}
+
+static std::shared_ptr<CWallet> LoadWallet(const std::string& name, const fs::path& path, DatabaseOptions options, ArgsManager &args)
+{
+    DatabaseStatus status;
+    bilingual_str error;
+    std::vector<bilingual_str> warnings;
+    std::unique_ptr<WalletDatabase> database = MakeDatabase(path, options, status, error);
+    if (!database) {
+        tfm::format(std::cerr, "%s\n", error.original);
         return nullptr;
     }
 
-    if (!error.empty()) {
-        tfm::format(std::cerr, "%s", error.original);
-    }
-
-    for (const auto &warning : warnings) {
-        tfm::format(std::cerr, "%s", warning.original);
-    }
-
-    if (load_wallet_ret != DBErrors::LOAD_OK && load_wallet_ret != DBErrors::NONCRITICAL_ERROR && load_wallet_ret != DBErrors::NEED_RESCAN) {
-        return nullptr;
-    }
-
-    if (options.require_create) WalletCreate(wallet_instance.get(), options.create_flags);
-
+    WalletContext empty_context;
+    empty_context.args = &args;
+    std::shared_ptr<CWallet> wallet_instance{CWallet::LoadExisting(empty_context, name, std::move(database), error, warnings)};
     return wallet_instance;
 }
 
@@ -93,7 +67,7 @@ static void WalletShowInfo(CWallet* wallet_instance)
     tfm::format(std::cout, "Address Book: %zu\n", wallet_instance->m_address_book.size());
 }
 
-bool ExecuteWalletToolFunc(const ArgsManager& args, const std::string& command)
+bool ExecuteWalletToolFunc(ArgsManager& args, const std::string& command)
 {
     if (args.IsArgSet("-dumpfile") && command != "dump" && command != "createfromdump") {
         tfm::format(std::cerr, "The -dumpfile option can only be used with the \"dump\" and \"createfromdump\" commands.\n");
@@ -113,7 +87,7 @@ bool ExecuteWalletToolFunc(const ArgsManager& args, const std::string& command)
         options.create_flags |= WALLET_FLAG_DESCRIPTORS;
         options.require_format = DatabaseFormat::SQLITE;
 
-        const std::shared_ptr<CWallet> wallet_instance = MakeWallet(name, path, options);
+        const std::shared_ptr<CWallet> wallet_instance = CreateWallet(name, path, options, args);
         if (wallet_instance) {
             WalletShowInfo(wallet_instance.get());
             wallet_instance->Close();
@@ -122,7 +96,7 @@ bool ExecuteWalletToolFunc(const ArgsManager& args, const std::string& command)
         DatabaseOptions options;
         ReadDatabaseArgs(args, options);
         options.require_existing = true;
-        const std::shared_ptr<CWallet> wallet_instance = MakeWallet(name, path, options);
+        const std::shared_ptr<CWallet> wallet_instance = LoadWallet(name, path, options, args);
         if (!wallet_instance) return false;
         WalletShowInfo(wallet_instance.get());
         wallet_instance->Close();

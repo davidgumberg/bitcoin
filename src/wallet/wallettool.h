@@ -12,7 +12,7 @@ class ArgsManager;
 namespace wallet {
 namespace WalletTool {
 
-bool ExecuteWalletToolFunc(const ArgsManager& args, const std::string& command);
+bool ExecuteWalletToolFunc(ArgsManager& args, const std::string& command);
 
 } // namespace WalletTool
 } // namespace wallet
