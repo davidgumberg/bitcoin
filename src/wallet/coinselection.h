@@ -28,10 +28,10 @@ static constexpr CAmount CHANGE_UPPER{1000000};
 struct COutput {
 private:
     /** The output's value minus fees required to spend it and bump its unconfirmed ancestors to the target feerate. */
-    std::optional<CAmount> effective_value;
+    CAmount effective_value;
 
     /** The fee required to spend this output at the transaction's target feerate and to bump its unconfirmed ancestors to the target feerate. */
-    std::optional<CAmount> fee;
+    CAmount fee;
 
 public:
     /** The outpoint identifying this UTXO */
@@ -85,8 +85,10 @@ public:
         if (feerate) {
             // base fee without considering potential unconfirmed ancestors
             fee = input_bytes < 0 ? 0 : feerate.value().GetFee(input_bytes);
-            effective_value = txout.nValue - fee.value();
+        } else {
+            fee = 0;
         }
+        effective_value = txout.nValue - fee;
     }
 
     COutput(const COutPoint& outpoint, const CTxOut& txout, int depth, int input_bytes, bool solvable, bool safe, int64_t time, bool from_me, const CAmount fees)
@@ -95,7 +97,7 @@ public:
         // if input_bytes is unknown, then fees should be 0, if input_bytes is known, then the fees should be a positive integer or 0 (input_bytes known and fees = 0 only happens in the tests)
         assert((input_bytes < 0 && fees == 0) || (input_bytes > 0 && fees >= 0));
         fee = fees;
-        effective_value = txout.nValue - fee.value();
+        effective_value = txout.nValue - fee;
     }
 
     std::string ToString() const;
@@ -109,25 +111,20 @@ public:
     {
         assert(bump_fee >= 0);
         ancestor_bump_fees = bump_fee;
-        assert(fee);
-        *fee += bump_fee;
+        fee += bump_fee;
         // Note: assert(effective_value - bump_fee == nValue - fee.value());
-        effective_value = txout.nValue - fee.value();
+        effective_value = txout.nValue - fee;
     }
 
     CAmount GetFee() const
     {
-        assert(fee.has_value());
-        return fee.value();
+        return fee;
     }
 
     CAmount GetEffectiveValue() const
     {
-        assert(effective_value.has_value());
-        return effective_value.value();
+        return effective_value;
     }
-
-    bool HasEffectiveValue() const { return effective_value.has_value(); }
 };
 
 /** Parameters for one iteration of Coin Selection. */

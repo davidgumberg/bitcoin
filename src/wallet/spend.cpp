@@ -223,7 +223,7 @@ void CoinsResult::Erase(const std::unordered_set<COutPoint, SaltedOutpointHasher
 
             // update cached amounts
             total_amount -= coin.txout.nValue;
-            if (coin.HasEffectiveValue()) total_effective_amount = *total_effective_amount - coin.GetEffectiveValue();
+            total_effective_amount -= coin.GetEffectiveValue();
             return true;
         });
         vec.erase(remove_it, vec.end());
@@ -241,10 +241,7 @@ void CoinsResult::Add(OutputType type, const COutput& out)
 {
     coins[type].emplace_back(out);
     total_amount += out.txout.nValue;
-    if (out.HasEffectiveValue()) {
-        total_effective_amount = total_effective_amount.has_value() ?
-                *total_effective_amount + out.GetEffectiveValue() : out.GetEffectiveValue();
-    }
+    total_effective_amount += out.GetEffectiveValue();
 }
 
 static OutputType GetOutputType(TxoutType type, bool is_from_p2sh)
@@ -834,8 +831,7 @@ util::Result<SelectionResult> SelectCoins(const CWallet& wallet, CoinsResult& av
 
     // Return early if we cannot cover the target with the wallet's UTXO.
     // We use the total effective value if we are not subtracting fee from outputs and 'available_coins' contains the data.
-    CAmount available_coins_total_amount = coin_selection_params.m_subtract_fee_outputs ? available_coins.GetTotalAmount() :
-            (available_coins.GetEffectiveTotalAmount().has_value() ? *available_coins.GetEffectiveTotalAmount() : 0);
+    CAmount available_coins_total_amount = coin_selection_params.m_subtract_fee_outputs ? available_coins.GetTotalAmount() : available_coins.GetEffectiveTotalAmount();
     if (selection_target > available_coins_total_amount) {
         return util::Error(); // Insufficient funds
     }
