@@ -95,10 +95,13 @@ public:
 };
 
 /** Access to the block database (blocks/index/) */
-class BlockTreeDB : public CDBWrapper
+class BlockTreeDB
 {
+private:
+    DBParams m_db_params;
+    std::unique_ptr<CDBWrapper> m_db;
 public:
-    using CDBWrapper::CDBWrapper;
+    BlockTreeDB(DBParams db_params);
     void WriteBatchSync(const std::vector<std::pair<int, const CBlockFileInfo*>>& fileInfo, int nLastFile, const std::vector<const CBlockIndex*>& blockinfo);
     bool ReadBlockFileInfo(int nFile, CBlockFileInfo& info);
     bool ReadLastBlockFile(int& nFile);
