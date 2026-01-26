@@ -54,17 +54,6 @@ public:
 
 class CDBWrapper;
 
-/** These should be considered an implementation detail of the specific database.
- */
-namespace dbwrapper_private {
-
-/** Work around circular dependency, as well as for testing in dbwrapper_tests.
- * Database obfuscation should be considered an implementation detail of the
- * specific database.
- */
-const Obfuscation& GetObfuscation(const CDBWrapper&);
-}; // namespace dbwrapper_private
-
 bool DestroyDB(const std::string& path_str);
 
 /** Batch of changes queued to be written to a CDBWrapper */
@@ -116,68 +105,11 @@ public:
     size_t ApproximateSize() const;
 };
 
-class CDBIterator
-{
-public:
-    struct IteratorImpl;
-
-private:
-    const CDBWrapper &parent;
-    const std::unique_ptr<IteratorImpl> m_impl_iter;
-
-    void SeekImpl(std::span<const std::byte> key);
-    std::span<const std::byte> GetKeyImpl() const;
-    std::span<const std::byte> GetValueImpl() const;
-
-public:
-
-    /**
-     * @param[in] _parent          Parent CDBWrapper instance.
-     * @param[in] _piter           The original leveldb iterator.
-     */
-    CDBIterator(const CDBWrapper& _parent, std::unique_ptr<IteratorImpl> _piter);
-    ~CDBIterator();
-
-    bool Valid() const;
-
-    void SeekToFirst();
-
-    template<typename K> void Seek(const K& key) {
-        DataStream ssKey{};
-        ssKey.reserve(DBWRAPPER_PREALLOC_KEY_SIZE);
-        ssKey << key;
-        SeekImpl(ssKey);
-    }
-
-    void Next();
-
-    template<typename K> bool GetKey(K& key) {
-        try {
-            DataStream ssKey{GetKeyImpl()};
-            ssKey >> key;
-        } catch (const std::exception&) {
-            return false;
-        }
-        return true;
-    }
-
-    template<typename V> bool GetValue(V& value) {
-        try {
-            DataStream ssValue{GetValueImpl()};
-            dbwrapper_private::GetObfuscation(parent)(ssValue);
-            ssValue >> value;
-        } catch (const std::exception&) {
-            return false;
-        }
-        return true;
-    }
-};
-
 struct LevelDBContext;
+class CDBIterator;
 
 class CDBWrapper
 {
-    friend const Obfuscation& dbwrapper_private::GetObfuscation(const CDBWrapper&);
 private:
     //! holds all leveldb-specific fields of this class
     std::unique_ptr<LevelDBContext> m_db_context;
@@ -202,6 +134,11 @@ public:
 
     CDBWrapper(const CDBWrapper&) = delete;
     CDBWrapper& operator=(const CDBWrapper&) = delete;
+
+    const Obfuscation& GetObfuscation() const
+    {
+        return m_obfuscation;
+    }
 
     template <typename K, typename V>
     bool Read(const K& key, V& value) const
@@ -271,5 +208,64 @@ public:
         return EstimateSizeImpl(ssKey1, ssKey2);
     }
 };
+
+class CDBIterator
+{
+public:
+    struct IteratorImpl;
+
+private:
+    const CDBWrapper &parent;
+    const std::unique_ptr<IteratorImpl> m_impl_iter;
+
+    void SeekImpl(std::span<const std::byte> key);
+    std::span<const std::byte> GetKeyImpl() const;
+    std::span<const std::byte> GetValueImpl() const;
+
+public:
+
+    /**
+     * @param[in] _parent          Parent CDBWrapper instance.
+     * @param[in] _piter           The original leveldb iterator.
+     */
+    CDBIterator(const CDBWrapper& _parent, std::unique_ptr<IteratorImpl> _piter);
+    ~CDBIterator();
+
+    bool Valid() const;
+
+    void SeekToFirst();
+
+    template<typename K> void Seek(const K& key) {
+        DataStream ssKey{};
+        ssKey.reserve(DBWRAPPER_PREALLOC_KEY_SIZE);
+        ssKey << key;
+        SeekImpl(ssKey);
+    }
+
+    void Next();
+
+    template<typename K> bool GetKey(K& key) {
+        try {
+            DataStream ssKey{GetKeyImpl()};
+            ssKey >> key;
+        } catch (const std::exception&) {
+            return false;
+        }
+        return true;
+    }
+
+    template<typename V> bool GetValue(V& value) {
+        try {
+            DataStream ssValue{GetValueImpl()};
+            parent.GetObfuscation()(ssValue);
+            ssValue >> value;
+        } catch (const std::exception&) {
+            return false;
+        }
+        return true;
+    }
+};
+
+
 
 #endif // BITCOIN_DBWRAPPER_H

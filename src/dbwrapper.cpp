@@ -174,7 +174,7 @@ void CDBBatch::Clear()
 void CDBBatch::WriteImpl(std::span<const std::byte> key, DataStream& ssValue)
 {
     leveldb::Slice slKey(CharCast(key.data()), key.size());
-    dbwrapper_private::GetObfuscation(parent)(ssValue);
+    parent.GetObfuscation()(ssValue);
     leveldb::Slice slValue(CharCast(ssValue.data()), ssValue.size());
     m_impl_batch->batch.Put(slKey, slValue);
 }
@@ -381,12 +381,3 @@ CDBIterator::~CDBIterator() = default;
 bool CDBIterator::Valid() const { return m_impl_iter->iter->Valid(); }
 void CDBIterator::SeekToFirst() { m_impl_iter->iter->SeekToFirst(); }
 void CDBIterator::Next() { m_impl_iter->iter->Next(); }
-
-namespace dbwrapper_private {
-
-const Obfuscation& GetObfuscation(const CDBWrapper& w)
-{
-    return w.m_obfuscation;
-}
-
-} // namespace dbwrapper_private
