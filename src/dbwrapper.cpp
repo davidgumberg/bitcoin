@@ -35,11 +35,6 @@
 
 static auto CharCast(const std::byte* data) { return reinterpret_cast<const char*>(data); }
 
-bool DestroyDB(const std::string& path_str)
-{
-    return leveldb::DestroyDB(path_str, {}).ok();
-}
-
 /** Handle database error by throwing dbwrapper_error exception.
  */
 static void HandleError(const leveldb::Status& status)
@@ -345,6 +340,11 @@ bool CDBWrapper::IsEmpty()
     std::unique_ptr<CDBIterator> it(NewIterator());
     it->SeekToFirst();
     return !(it->Valid());
+}
+
+bool CDBWrapper::DestroyDB(const std::string& path_str)
+{
+    return leveldb::DestroyDB(path_str, {}).ok();
 }
 
 struct CDBIterator::IteratorImpl {

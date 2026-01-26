@@ -197,6 +197,8 @@ public:
      */
     bool IsEmpty();
 
+    static bool DestroyDB(const std::string& path_str);
+
     template<typename K>
     size_t EstimateSize(const K& key_begin, const K& key_end) const
     {
