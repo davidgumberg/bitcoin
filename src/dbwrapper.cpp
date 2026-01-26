@@ -244,15 +244,22 @@ CDBWrapper::CDBWrapper(const DBParams& params)
         LogInfo("Finished database compaction of %s", fs::PathToString(params.path));
     }
 
-    if (!Read(OBFUSCATION_KEY, m_obfuscation) && params.obfuscate && IsEmpty()) {
+    InitializeObfuscation(params);
+}
+
+void CDBWrapper::InitializeObfuscation(const DBParams& params)
+{
+    const auto& db_path = fs::PathToString(params.path);
+    const bool obfuscate_exists = Read(OBFUSCATION_KEY, m_obfuscation);
+    if (!obfuscate_exists && params.obfuscate && IsEmpty()) {
         // Generate and write the new obfuscation key.
         const Obfuscation obfuscation{FastRandomContext{}.randbytes<Obfuscation::KEY_SIZE>()};
         assert(!m_obfuscation); // Make sure the key is written without obfuscation.
         Write(OBFUSCATION_KEY, obfuscation);
         m_obfuscation = obfuscation;
-        LogInfo("Wrote new obfuscation key for %s: %s", fs::PathToString(params.path), m_obfuscation.HexKey());
+        LogInfo("Wrote new obfuscation key for %s: %s", db_path, m_obfuscation.HexKey());
     }
-    LogInfo("Using obfuscation key for %s: %s", fs::PathToString(params.path), m_obfuscation.HexKey());
+    LogInfo("Using obfuscation key for %s: %s", db_path, m_obfuscation.HexKey());
 }
 
 CDBWrapper::~CDBWrapper()

@@ -128,6 +128,10 @@ private:
     size_t EstimateSizeImpl(std::span<const std::byte> key1, std::span<const std::byte> key2) const;
     auto& DBContext() const LIFETIMEBOUND { return *Assert(m_db_context); }
 
+    //! Initializes m_obfuscation from DB if one exists, otherwise generates and
+    //! writes an obfuscation key.
+    void InitializeObfuscation(const DBParams& params);
+
 public:
     CDBWrapper(const DBParams& params);
     ~CDBWrapper();
