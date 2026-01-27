@@ -18,7 +18,7 @@
 #include <consensus/tx_verify.h>
 #include <consensus/validation.h>
 #include <cuckoocache.h>
-#include <dbwrapper.h>
+#include <dbwrapper/dbwrapper.h>
 #include <flatfile.h>
 #include <hash.h>
 #include <kernel/chainparams.h>

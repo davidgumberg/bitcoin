@@ -5,7 +5,7 @@
 #ifndef BITCOIN_INDEX_DB_KEY_H
 #define BITCOIN_INDEX_DB_KEY_H
 
-#include <dbwrapper.h>
+#include <dbwrapper/dbwrapper.h>
 #include <interfaces/types.h>
 #include <logging.h>
 #include <serialize.h>

@@ -6,7 +6,7 @@
 
 #include <chain.h>
 #include <common/args.h>
-#include <dbwrapper.h>
+#include <dbwrapper/dbwrapper.h>
 #include <interfaces/chain.h>
 #include <interfaces/types.h>
 #include <kernel/types.h>

@@ -11,7 +11,7 @@
 #include <common/args.h>
 #include <consensus/amount.h>
 #include <crypto/muhash.h>
-#include <dbwrapper.h>
+#include <dbwrapper/dbwrapper.h>
 #include <index/base.h>
 #include <index/db_key.h>
 #include <interfaces/chain.h>

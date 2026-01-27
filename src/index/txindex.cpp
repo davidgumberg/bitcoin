@@ -5,7 +5,7 @@
 #include <index/txindex.h>
 
 #include <common/args.h>
-#include <dbwrapper.h>
+#include <dbwrapper/dbwrapper.h>
 #include <flatfile.h>
 #include <index/base.h>
 #include <index/disktxpos.h>

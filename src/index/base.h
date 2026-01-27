@@ -6,7 +6,7 @@
 #define BITCOIN_INDEX_BASE_H
 
 #include <attributes.h>
-#include <dbwrapper.h>
+#include <dbwrapper/dbwrapper.h>
 #include <interfaces/chain.h>
 #include <kernel/cs_main.h>
 #include <threadsafety.h>

@@ -8,7 +8,7 @@
 #include <kernel/notifications_interface.h>
 
 #include <arith_uint256.h>
-#include <dbwrapper.h>
+#include <dbwrapper/dbwrapper.h>
 #include <script/sigcache.h>
 #include <txdb.h>
 #include <uint256.h>

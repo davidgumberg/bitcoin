@@ -9,7 +9,7 @@
 #include <chain.h>
 #include <coins.h>
 #include <consensus/validation.h>
-#include <dbwrapper.h>
+#include <dbwrapper/dbwrapper.h>
 #include <kernel/caches.h>
 #include <kernel/chainparams.h>
 #include <kernel/checks.h>

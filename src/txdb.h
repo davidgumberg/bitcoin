@@ -7,7 +7,7 @@
 #define BITCOIN_TXDB_H
 
 #include <coins.h>
-#include <dbwrapper.h>
+#include <dbwrapper/dbwrapper.h>
 #include <kernel/caches.h>
 #include <kernel/cs_main.h>
 #include <sync.h>

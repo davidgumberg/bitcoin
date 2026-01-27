@@ -5,7 +5,7 @@
 #include <node/database_args.h>
 
 #include <common/args.h>
-#include <dbwrapper.h>
+#include <dbwrapper/dbwrapper.h>
 
 namespace node {
 void ReadDatabaseArgs(const ArgsManager& args, DBOptions& options)

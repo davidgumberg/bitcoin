@@ -25,7 +25,7 @@ add_library(bitcoinkernel
   ../consensus/merkle.cpp
   ../consensus/tx_check.cpp
   ../consensus/tx_verify.cpp
-  ../dbwrapper.cpp
+  ../dbwrapper/dbwrapper.cpp
   ../deploymentinfo.cpp
   ../deploymentstatus.cpp
   ../flatfile.cpp
