@@ -52,34 +52,30 @@ public:
     explicit dbwrapper_error(const std::string& msg) : std::runtime_error(msg) {}
 };
 
-class CDBWrapper;
+class DBWrapperBase;
 
 bool DestroyDB(const std::string& path_str);
 
 /** Batch of changes queued to be written to a CDBWrapper */
-class CDBBatch
+class DBBatchBase
 {
-    friend class CDBWrapper;
-
-private:
-    const CDBWrapper &parent;
-
-    struct WriteBatchImpl;
-    const std::unique_ptr<WriteBatchImpl> m_impl_batch;
+protected:
+    const DBWrapperBase &m_parent;
 
     DataStream ssKey{};
     DataStream ssValue{};
 
-    void WriteImpl(std::span<const std::byte> key, DataStream& ssValue);
-    void EraseImpl(std::span<const std::byte> key);
+    virtual void WriteImpl(std::span<const std::byte> key, DataStream& value) = 0;
+    virtual void EraseImpl(std::span<const std::byte> key) = 0;
 
 public:
     /**
      * @param[in] _parent   CDBWrapper that this batch is to be submitted to
      */
-    explicit CDBBatch(const CDBWrapper& _parent);
-    ~CDBBatch();
-    void Clear();
+    explicit DBBatchBase(const DBWrapperBase& _parent) : m_parent{_parent} {}
+    virtual ~DBBatchBase() = default;
+    virtual void Clear() = 0;
+    virtual size_t ApproximateSize() const = 0;
 
     template <typename K, typename V>
     void Write(const K& key, const V& value)
@@ -101,19 +97,35 @@ public:
         EraseImpl(ssKey);
         ssKey.clear();
     }
-
-    size_t ApproximateSize() const;
 };
 
-struct LevelDBContext;
-class CDBIterator;
-
-class CDBWrapper
+class DBBatch : public DBBatchBase
 {
-private:
-    //! holds all leveldb-specific fields of this class
-    std::unique_ptr<LevelDBContext> m_db_context;
+    friend class DBWrapperBase;
+    friend class DBWrapper;
 
+private:
+    struct WriteBatchImpl;
+    const std::unique_ptr<WriteBatchImpl> m_impl_batch;
+
+    void WriteImpl(std::span<const std::byte> key, DataStream& value) override;
+    void EraseImpl(std::span<const std::byte> key) override;
+public:
+    /**
+     * @param[in] _parent   CDBWrapper that this batch is to be submitted to
+     */
+    explicit DBBatch(const DBWrapperBase& _parent);
+    ~DBBatch() override;
+    void Clear() override;
+    size_t ApproximateSize() const override;
+};
+
+class DBIteratorBase;
+
+class DBWrapperBase
+{
+protected:
+    DBWrapperBase(const DBParams& params) : m_name(fs::PathToString(params.path.stem())) {}
     //! the name of this database
     std::string m_name;
 
@@ -123,26 +135,28 @@ private:
     //! obfuscation key storage key, null-prefixed to avoid collisions
     inline static const std::string OBFUSCATION_KEY{"\000obfuscate_key", 14}; // explicit size to avoid truncation at leading \0
 
-    std::optional<std::string> ReadImpl(std::span<const std::byte> key) const;
-    bool ExistsImpl(std::span<const std::byte> key) const;
-    size_t EstimateSizeImpl(std::span<const std::byte> key1, std::span<const std::byte> key2) const;
-    auto& DBContext() const LIFETIMEBOUND { return *Assert(m_db_context); }
+    virtual std::optional<std::string> ReadImpl(std::span<const std::byte> key) const = 0;
+    virtual bool ExistsImpl(std::span<const std::byte> key) const = 0;
+    virtual size_t EstimateSizeImpl(std::span<const std::byte> key1, std::span<const std::byte> key2) const = 0;
 
     //! Initializes m_obfuscation from DB if one exists, otherwise generates and
     //! writes an obfuscation key.
     void InitializeObfuscation(const DBParams& params);
 
 public:
-    CDBWrapper(const DBParams& params);
-    ~CDBWrapper();
+    virtual ~DBWrapperBase() = default;
 
-    CDBWrapper(const CDBWrapper&) = delete;
-    CDBWrapper& operator=(const CDBWrapper&) = delete;
+    DBWrapperBase(const DBWrapperBase&) = delete;
+    DBWrapperBase& operator=(const DBWrapperBase&) = delete;
+    DBWrapperBase(DBWrapperBase&& other) = default;
+    DBWrapperBase& operator=(DBWrapperBase&& other) = default;
 
     const Obfuscation& GetObfuscation() const
     {
         return m_obfuscation;
     }
+
+    virtual std::unique_ptr<DBBatchBase> CreateBatch() = 0;
 
     template <typename K, typename V>
     bool Read(const K& key, V& value) const
@@ -167,9 +181,9 @@ public:
     template <typename K, typename V>
     void Write(const K& key, const V& value, bool fSync = false)
     {
-        CDBBatch batch(*this);
-        batch.Write(key, value);
-        WriteBatch(batch, fSync);
+        auto batch = CreateBatch();
+        batch->Write(key, value);
+        WriteBatch(*batch, fSync);
     }
 
     template <typename K>
@@ -184,24 +198,22 @@ public:
     template <typename K>
     void Erase(const K& key, bool fSync = false)
     {
-        CDBBatch batch(*this);
-        batch.Erase(key);
-        WriteBatch(batch, fSync);
+        auto batch = CreateBatch();
+        batch->Erase(key);
+        WriteBatch(*batch, fSync);
     }
 
-    void WriteBatch(CDBBatch& batch, bool fSync = false);
+    virtual void WriteBatch(DBBatchBase& batch, bool fSync = false) = 0;
 
     // Get an estimate of LevelDB memory usage (in bytes).
-    size_t DynamicMemoryUsage() const;
+    virtual size_t DynamicMemoryUsage() const = 0;
 
-    CDBIterator* NewIterator();
+    virtual DBIteratorBase* NewIterator() = 0;
 
     /**
      * Return true if the database managed by this class contains no entries.
      */
     bool IsEmpty();
-
-    static bool DestroyDB(const std::string& path_str);
 
     template<typename K>
     size_t EstimateSize(const K& key_begin, const K& key_end) const
@@ -215,31 +227,51 @@ public:
     }
 };
 
-class CDBIterator
+struct LevelDBContext;
+
+class DBWrapper : public DBWrapperBase
 {
-public:
-    struct IteratorImpl;
-
+protected:
 private:
-    const CDBWrapper &parent;
-    const std::unique_ptr<IteratorImpl> m_impl_iter;
+    //! holds all leveldb-specific fields of this class
+    std::unique_ptr<LevelDBContext> m_db_context;
+    auto& DBContext() const LIFETIMEBOUND { return *Assert(m_db_context); }
 
-    void SeekImpl(std::span<const std::byte> key);
-    std::span<const std::byte> GetKeyImpl() const;
-    std::span<const std::byte> GetValueImpl() const;
+    std::optional<std::string> ReadImpl(std::span<const std::byte> key) const override;
+    bool ExistsImpl(std::span<const std::byte> key) const override;
+    size_t EstimateSizeImpl(std::span<const std::byte> key1, std::span<const std::byte> key2) const override;
+
+    size_t DynamicMemoryUsage() const override;
 
 public:
+    DBWrapper(const DBParams& params);
+    ~DBWrapper() override;
 
-    /**
-     * @param[in] _parent          Parent CDBWrapper instance.
-     * @param[in] _piter           The original leveldb iterator.
-     */
-    CDBIterator(const CDBWrapper& _parent, std::unique_ptr<IteratorImpl> _piter);
-    ~CDBIterator();
+    std::unique_ptr<DBBatchBase> CreateBatch() override {
+        return std::make_unique<DBBatch>(*this);
+    }
+    void WriteBatch(DBBatchBase& batch, bool fSync = false) override;
+    DBIteratorBase* NewIterator() override;
 
-    bool Valid() const;
+    static bool DestroyDB(const std::string& path_str);
+};
 
-    void SeekToFirst();
+class DBIteratorBase
+{
+protected:
+    const DBWrapperBase &parent;
+
+    virtual void SeekImpl(std::span<const std::byte> key) = 0;
+    virtual std::span<const std::byte> GetKeyImpl() const = 0;
+    virtual std::span<const std::byte> GetValueImpl() const = 0;
+public:
+    explicit DBIteratorBase(const DBWrapperBase& _parent)
+        : parent(_parent) {}
+    virtual ~DBIteratorBase() = default;
+
+    virtual bool Valid() const = 0;
+    virtual void SeekToFirst() = 0;
+    virtual void Next() = 0;
 
     template<typename K> void Seek(const K& key) {
         DataStream ssKey{};
@@ -247,8 +279,6 @@ public:
         ssKey << key;
         SeekImpl(ssKey);
     }
-
-    void Next();
 
     template<typename K> bool GetKey(K& key) {
         try {
@@ -272,6 +302,28 @@ public:
     }
 };
 
+// LevelDB implementation of iterator
+class DBIterator : public DBIteratorBase
+{
+public:
+    struct IteratorImpl;
+private:
+    const std::unique_ptr<IteratorImpl> m_impl_iter;
 
+    void SeekImpl(std::span<const std::byte> key) override;
+    std::span<const std::byte> GetKeyImpl() const override;
+    std::span<const std::byte> GetValueImpl() const override;
+public:
+    /**
+     * @param[in] _parent          Parent CDBWrapper instance.
+     * @param[in] _piter           The original leveldb iterator.
+     */
+    DBIterator(const DBWrapperBase& _parent, std::unique_ptr<IteratorImpl> _piter);
+    ~DBIterator() override;
+
+    bool Valid() const override;
+    void SeekToFirst() override;
+    void Next() override;
+};
 
 #endif // BITCOIN_DBWRAPPER_H

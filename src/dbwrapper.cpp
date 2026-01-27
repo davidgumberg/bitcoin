@@ -148,39 +148,40 @@ static leveldb::Options GetOptions(size_t nCacheSize)
     return options;
 }
 
-struct CDBBatch::WriteBatchImpl {
+struct DBBatch::WriteBatchImpl {
     leveldb::WriteBatch batch;
 };
 
-CDBBatch::CDBBatch(const CDBWrapper& _parent)
-    : parent{_parent},
-      m_impl_batch{std::make_unique<CDBBatch::WriteBatchImpl>()}
+
+DBBatch::DBBatch(const DBWrapperBase& _parent)
+    : DBBatchBase(_parent),
+      m_impl_batch{std::make_unique<DBBatch::WriteBatchImpl>()}
 {
     Clear();
 };
 
-CDBBatch::~CDBBatch() = default;
+DBBatch::~DBBatch() = default;
 
-void CDBBatch::Clear()
+void DBBatch::Clear()
 {
     m_impl_batch->batch.Clear();
 }
 
-void CDBBatch::WriteImpl(std::span<const std::byte> key, DataStream& ssValue)
+void DBBatch::WriteImpl(std::span<const std::byte> key, DataStream& value)
 {
     leveldb::Slice slKey(CharCast(key.data()), key.size());
-    parent.GetObfuscation()(ssValue);
-    leveldb::Slice slValue(CharCast(ssValue.data()), ssValue.size());
+    m_parent.GetObfuscation()(value);
+    leveldb::Slice slValue(CharCast(value.data()), value.size());
     m_impl_batch->batch.Put(slKey, slValue);
 }
 
-void CDBBatch::EraseImpl(std::span<const std::byte> key)
+void DBBatch::EraseImpl(std::span<const std::byte> key)
 {
     leveldb::Slice slKey(CharCast(key.data()), key.size());
     m_impl_batch->batch.Delete(slKey);
 }
 
-size_t CDBBatch::ApproximateSize() const
+size_t DBBatch::ApproximateSize() const
 {
     return m_impl_batch->batch.ApproximateSize();
 }
@@ -208,8 +209,9 @@ struct LevelDBContext {
     leveldb::DB* pdb;
 };
 
-CDBWrapper::CDBWrapper(const DBParams& params)
-    : m_db_context{std::make_unique<LevelDBContext>()}, m_name{fs::PathToString(params.path.stem())}
+DBWrapper::DBWrapper(const DBParams& params)
+    : DBWrapperBase(params),
+      m_db_context{std::make_unique<LevelDBContext>()}
 {
     DBContext().penv = nullptr;
     DBContext().readoptions.verify_checksums = true;
@@ -247,7 +249,7 @@ CDBWrapper::CDBWrapper(const DBParams& params)
     InitializeObfuscation(params);
 }
 
-void CDBWrapper::InitializeObfuscation(const DBParams& params)
+void DBWrapperBase::InitializeObfuscation(const DBParams& params)
 {
     const auto& db_path = fs::PathToString(params.path);
     const bool obfuscate_exists = Read(OBFUSCATION_KEY, m_obfuscation);
@@ -262,7 +264,7 @@ void CDBWrapper::InitializeObfuscation(const DBParams& params)
     LogInfo("Using obfuscation key for %s: %s", db_path, m_obfuscation.HexKey());
 }
 
-CDBWrapper::~CDBWrapper()
+DBWrapper::~DBWrapper()
 {
     delete DBContext().pdb;
     DBContext().pdb = nullptr;
@@ -276,8 +278,9 @@ CDBWrapper::~CDBWrapper()
     DBContext().options.env = nullptr;
 }
 
-void CDBWrapper::WriteBatch(CDBBatch& batch, bool fSync)
+void DBWrapper::WriteBatch(DBBatchBase& _batch, bool fSync)
 {
+    DBBatch& batch = static_cast<DBBatch&>(_batch);
     const bool log_memory = LogAcceptCategory(BCLog::LEVELDB, BCLog::Level::Debug);
     double mem_before = 0;
     if (log_memory) {
@@ -292,7 +295,7 @@ void CDBWrapper::WriteBatch(CDBBatch& batch, bool fSync)
     }
 }
 
-size_t CDBWrapper::DynamicMemoryUsage() const
+size_t DBWrapper::DynamicMemoryUsage() const
 {
     std::string memory;
     std::optional<size_t> parsed;
@@ -303,7 +306,7 @@ size_t CDBWrapper::DynamicMemoryUsage() const
     return parsed.value();
 }
 
-std::optional<std::string> CDBWrapper::ReadImpl(std::span<const std::byte> key) const
+std::optional<std::string> DBWrapper::ReadImpl(std::span<const std::byte> key) const
 {
     leveldb::Slice slKey(CharCast(key.data()), key.size());
     std::string strValue;
@@ -317,7 +320,7 @@ std::optional<std::string> CDBWrapper::ReadImpl(std::span<const std::byte> key) 
     return strValue;
 }
 
-bool CDBWrapper::ExistsImpl(std::span<const std::byte> key) const
+bool DBWrapper::ExistsImpl(std::span<const std::byte> key) const
 {
     leveldb::Slice slKey(CharCast(key.data()), key.size());
 
@@ -332,7 +335,7 @@ bool CDBWrapper::ExistsImpl(std::span<const std::byte> key) const
     return true;
 }
 
-size_t CDBWrapper::EstimateSizeImpl(std::span<const std::byte> key1, std::span<const std::byte> key2) const
+size_t DBWrapper::EstimateSizeImpl(std::span<const std::byte> key1, std::span<const std::byte> key2) const
 {
     leveldb::Slice slKey1(CharCast(key1.data()), key1.size());
     leveldb::Slice slKey2(CharCast(key2.data()), key2.size());
@@ -342,49 +345,50 @@ size_t CDBWrapper::EstimateSizeImpl(std::span<const std::byte> key1, std::span<c
     return size;
 }
 
-bool CDBWrapper::IsEmpty()
+bool DBWrapperBase::IsEmpty()
 {
-    std::unique_ptr<CDBIterator> it(NewIterator());
+    std::unique_ptr<DBIteratorBase> it(NewIterator());
     it->SeekToFirst();
     return !(it->Valid());
 }
 
-bool CDBWrapper::DestroyDB(const std::string& path_str)
+bool DBWrapper::DestroyDB(const std::string& path_str)
 {
     return leveldb::DestroyDB(path_str, {}).ok();
 }
 
-struct CDBIterator::IteratorImpl {
+struct DBIterator::IteratorImpl {
     const std::unique_ptr<leveldb::Iterator> iter;
 
     explicit IteratorImpl(leveldb::Iterator* _iter) : iter{_iter} {}
 };
 
-CDBIterator::CDBIterator(const CDBWrapper& _parent, std::unique_ptr<IteratorImpl> _piter) : parent(_parent),
-                                                                                            m_impl_iter(std::move(_piter)) {}
+DBIterator::DBIterator(const DBWrapperBase& _parent, std::unique_ptr<IteratorImpl> _piter)
+    : DBIteratorBase(_parent),
+      m_impl_iter(std::move(_piter)) {}
 
-CDBIterator* CDBWrapper::NewIterator()
+DBIteratorBase* DBWrapper::NewIterator()
 {
-    return new CDBIterator{*this, std::make_unique<CDBIterator::IteratorImpl>(DBContext().pdb->NewIterator(DBContext().iteroptions))};
+    return new DBIterator{*this, std::make_unique<DBIterator::IteratorImpl>(DBContext().pdb->NewIterator(DBContext().iteroptions))};
 }
 
-void CDBIterator::SeekImpl(std::span<const std::byte> key)
+void DBIterator::SeekImpl(std::span<const std::byte> key)
 {
     leveldb::Slice slKey(CharCast(key.data()), key.size());
     m_impl_iter->iter->Seek(slKey);
 }
 
-std::span<const std::byte> CDBIterator::GetKeyImpl() const
+std::span<const std::byte> DBIterator::GetKeyImpl() const
 {
     return MakeByteSpan(m_impl_iter->iter->key());
 }
 
-std::span<const std::byte> CDBIterator::GetValueImpl() const
+std::span<const std::byte> DBIterator::GetValueImpl() const
 {
     return MakeByteSpan(m_impl_iter->iter->value());
 }
 
-CDBIterator::~CDBIterator() = default;
-bool CDBIterator::Valid() const { return m_impl_iter->iter->Valid(); }
-void CDBIterator::SeekToFirst() { m_impl_iter->iter->SeekToFirst(); }
-void CDBIterator::Next() { m_impl_iter->iter->Next(); }
+DBIterator::~DBIterator() = default;
+bool DBIterator::Valid() const { return m_impl_iter->iter->Valid(); }
+void DBIterator::SeekToFirst() { m_impl_iter->iter->SeekToFirst(); }
+void DBIterator::Next() { m_impl_iter->iter->Next(); }

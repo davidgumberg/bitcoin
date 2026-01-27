@@ -60,11 +60,11 @@ bool TxIndex::DB::ReadTxPos(const Txid& txid, CDiskTxPos& pos) const
 
 void TxIndex::DB::WriteTxs(const std::vector<std::pair<Txid, CDiskTxPos>>& v_pos)
 {
-    CDBBatch batch(*this);
+    auto batch{CreateBatch()};
     for (const auto& [txid, pos] : v_pos) {
-        batch.Write(std::make_pair(DB_TXINDEX, txid.ToUint256()), pos);
+        batch->Write(std::make_pair(DB_TXINDEX, txid.ToUint256()), pos);
     }
-    WriteBatch(batch);
+    WriteBatch(*batch);
 }
 
 TxIndex::TxIndex(std::unique_ptr<interfaces::Chain> chain, size_t n_cache_size, bool f_memory, bool f_wipe)

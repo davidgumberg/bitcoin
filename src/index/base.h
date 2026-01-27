@@ -61,7 +61,7 @@ protected:
      * and block index entries may not be flushed to disk until after this database
      * is updated.
     */
-    class DB : public CDBWrapper
+    class DB : public DBWrapper
     {
     public:
         DB(const fs::path& path, size_t n_cache_size,
@@ -72,7 +72,7 @@ protected:
         CBlockLocator ReadBestBlock() const;
 
         /// Write block locator of the chain that the index is in sync with.
-        void WriteBestBlock(CDBBatch& batch, const CBlockLocator& locator);
+        void WriteBestBlock(DBBatchBase& batch, const CBlockLocator& locator);
     };
 
 private:
@@ -133,7 +133,7 @@ protected:
 
     /// Virtual method called internally by Commit that can be overridden to atomically
     /// commit more index state.
-    virtual bool CustomCommit(CDBBatch& batch) { return true; }
+    virtual bool CustomCommit(DBBatchBase& batch) { return true; }
 
     /// Rewind index by one block during a chain reorg.
     [[nodiscard]] virtual bool CustomRemove(const interfaces::BlockInfo& block) { return true; }

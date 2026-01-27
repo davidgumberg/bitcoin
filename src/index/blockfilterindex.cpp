@@ -125,7 +125,7 @@ bool BlockFilterIndex::CustomInit(const std::optional<interfaces::BlockRef>& blo
     return true;
 }
 
-bool BlockFilterIndex::CustomCommit(CDBBatch& batch)
+bool BlockFilterIndex::CustomCommit(DBBatchBase& batch)
 {
     const FlatFilePos& pos = m_next_filter_pos;
 
@@ -276,28 +276,28 @@ bool BlockFilterIndex::Write(const BlockFilter& filter, uint32_t block_height, c
 
 bool BlockFilterIndex::CustomRemove(const interfaces::BlockInfo& block)
 {
-    CDBBatch batch(*m_db);
-    std::unique_ptr<CDBIterator> db_it(m_db->NewIterator());
+    auto batch{m_db->CreateBatch()};
+    std::unique_ptr<DBIteratorBase> db_it(m_db->NewIterator());
 
     // During a reorg, we need to copy block filter that is getting disconnected from the
     // height index to the hash index so we can still find it when the height index entry
     // is overwritten.
-    if (!index_util::CopyHeightIndexToHashIndex<DBVal>(*db_it, batch, m_name, block.height)) {
+    if (!index_util::CopyHeightIndexToHashIndex<DBVal>(*db_it, static_cast<DBBatchBase&>(*batch), m_name, block.height)) {
         return false;
     }
 
     // The latest filter position gets written in Commit by the call to the BaseIndex::Rewind.
     // But since this creates new references to the filter, the position should get updated here
     // atomically as well in case Commit fails.
-    batch.Write(DB_FILTER_POS, m_next_filter_pos);
-    m_db->WriteBatch(batch);
+    batch->Write(DB_FILTER_POS, m_next_filter_pos);
+    m_db->WriteBatch(*batch);
 
     // Update cached header to the previous block hash
     m_last_header = *Assert(ReadFilterHeader(block.height - 1, *Assert(block.prev_hash)));
     return true;
 }
 
-static bool LookupRange(CDBWrapper& db, const std::string& index_name, int start_height,
+static bool LookupRange(DBWrapperBase& db, const std::string& index_name, int start_height,
                         const CBlockIndex* stop_index, std::vector<DBVal>& results)
 {
     if (start_height < 0) {
@@ -314,7 +314,7 @@ static bool LookupRange(CDBWrapper& db, const std::string& index_name, int start
     std::vector<std::pair<uint256, DBVal>> values(results_size);
 
     index_util::DBHeightKey key(start_height);
-    std::unique_ptr<CDBIterator> db_it(db.NewIterator());
+    std::unique_ptr<DBIteratorBase> db_it(db.NewIterator());
     db_it->Seek(index_util::DBHeightKey(start_height));
     for (int height = start_height; height <= stop_index->nHeight; ++height) {
         if (!db_it->Valid() || !db_it->GetKey(key) || key.height != height) {

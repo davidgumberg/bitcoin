@@ -216,16 +216,16 @@ bool CoinStatsIndex::CustomAppend(const interfaces::BlockInfo& block)
 
 bool CoinStatsIndex::CustomRemove(const interfaces::BlockInfo& block)
 {
-    CDBBatch batch(*m_db);
-    std::unique_ptr<CDBIterator> db_it(m_db->NewIterator());
+    auto batch{m_db->CreateBatch()};
+    std::unique_ptr<DBIteratorBase> db_it(m_db->NewIterator());
 
     // During a reorg, copy the block's hash digest from the height index to the hash index,
     // ensuring it's still accessible after the height index entry is overwritten.
-    if (!index_util::CopyHeightIndexToHashIndex<DBVal>(*db_it, batch, m_name, block.height)) {
+    if (!index_util::CopyHeightIndexToHashIndex<DBVal>(*db_it, *batch, m_name, block.height)) {
         return false;
     }
 
-    m_db->WriteBatch(batch);
+    m_db->WriteBatch(*batch);
 
     if (!RevertBlock(block)) {
         return false; // failure cause logged internally
@@ -306,7 +306,7 @@ bool CoinStatsIndex::CustomInit(const std::optional<interfaces::BlockRef>& block
     return true;
 }
 
-bool CoinStatsIndex::CustomCommit(CDBBatch& batch)
+bool CoinStatsIndex::CustomCommit(DBBatchBase& batch)
 {
     // DB_MUHASH should always be committed in a batch together with DB_BEST_BLOCK
     // to prevent an inconsistent state of the DB.

@@ -69,7 +69,7 @@ struct DBHashKey {
 };
 
 template <typename DBVal>
-[[nodiscard]] static bool CopyHeightIndexToHashIndex(CDBIterator& db_it, CDBBatch& batch,
+[[nodiscard]] static bool CopyHeightIndexToHashIndex(DBIteratorBase& db_it, DBBatchBase& batch,
                                                      const std::string& index_name, int height)
 {
     DBHeightKey key(height);
@@ -93,7 +93,7 @@ template <typename DBVal>
 }
 
 template <typename DBVal>
-static bool LookUpOne(const CDBWrapper& db, const interfaces::BlockRef& block, DBVal& result)
+static bool LookUpOne(const DBWrapperBase& db, const interfaces::BlockRef& block, DBVal& result)
 {
     // First check if the result is stored under the height index and the value
     // there matches the block hash. This should be the case if the block is on

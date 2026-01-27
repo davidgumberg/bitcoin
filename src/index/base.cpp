@@ -66,7 +66,7 @@ CBlockLocator GetLocator(interfaces::Chain& chain, const uint256& block_hash)
 }
 
 BaseIndex::DB::DB(const fs::path& path, size_t n_cache_size, bool f_memory, bool f_wipe, bool f_obfuscate) :
-    CDBWrapper{DBParams{
+    DBWrapper{DBParams{
         .path = path,
         .cache_bytes = n_cache_size,
         .memory_only = f_memory,
@@ -87,7 +87,7 @@ CBlockLocator BaseIndex::DB::ReadBestBlock() const
     return locator;
 }
 
-void BaseIndex::DB::WriteBestBlock(CDBBatch& batch, const CBlockLocator& locator)
+void BaseIndex::DB::WriteBestBlock(DBBatchBase& batch, const CBlockLocator& locator)
 {
     batch.Write(DB_BEST_BLOCK, locator);
 }
@@ -273,7 +273,8 @@ bool BaseIndex::Commit()
     // (this could happen if init is interrupted).
     bool ok = m_best_block_index != nullptr;
     if (ok) {
-        CDBBatch batch(GetDB());
+        GetDB().CreateBatch();
+        DBBatch batch(GetDB());
         ok = CustomCommit(batch);
         if (ok) {
             GetDB().WriteBestBlock(batch, GetLocator(*m_chain, m_best_block_index.load()->GetBlockHash()));

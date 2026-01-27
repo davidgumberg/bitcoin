@@ -68,7 +68,7 @@ static constexpr uint8_t DB_LAST_BLOCK{'l'};
 
 BlockTreeDB::BlockTreeDB(DBParams db_params) :
     m_db_params(std::move(db_params)),
-    m_db(std::make_unique<CDBWrapper>(m_db_params)) { }
+    m_db(std::make_unique<DBWrapper>(m_db_params)) { }
 
 bool BlockTreeDB::ReadBlockFileInfo(int nFile, CBlockFileInfo& info)
 {
@@ -96,15 +96,15 @@ bool BlockTreeDB::ReadLastBlockFile(int& nFile)
 
 void BlockTreeDB::WriteBatchSync(const std::vector<std::pair<int, const CBlockFileInfo*>>& fileInfo, int nLastFile, const std::vector<const CBlockIndex*>& blockinfo)
 {
-    CDBBatch batch(*m_db);
+    auto batch{m_db->CreateBatch()};
     for (const auto& [file, info] : fileInfo) {
-        batch.Write(std::make_pair(DB_BLOCK_FILES, file), *info);
+        batch->Write(std::make_pair(DB_BLOCK_FILES, file), *info);
     }
-    batch.Write(DB_LAST_BLOCK, nLastFile);
+    batch->Write(DB_LAST_BLOCK, nLastFile);
     for (const CBlockIndex* bi : blockinfo) {
-        batch.Write(std::make_pair(DB_BLOCK_INDEX, bi->GetBlockHash()), CDiskBlockIndex{bi});
+        batch->Write(std::make_pair(DB_BLOCK_INDEX, bi->GetBlockHash()), CDiskBlockIndex{bi});
     }
-    m_db->WriteBatch(batch, true);
+    m_db->WriteBatch(*batch, true);
 }
 
 void BlockTreeDB::WriteFlag(const std::string& name, bool fValue)
@@ -125,7 +125,7 @@ bool BlockTreeDB::ReadFlag(const std::string& name, bool& fValue)
 bool BlockTreeDB::LoadBlockIndexGuts(const Consensus::Params& consensusParams, std::function<CBlockIndex*(const uint256&)> insertBlockIndex, const util::SignalInterrupt& interrupt)
 {
     AssertLockHeld(::cs_main);
-    std::unique_ptr<CDBIterator> pcursor(m_db->NewIterator());
+    std::unique_ptr<DBIteratorBase> pcursor(m_db->NewIterator());
     pcursor->Seek(std::make_pair(DB_BLOCK_INDEX, uint256()));
 
     // Load m_block_index

@@ -99,7 +99,7 @@ class BlockTreeDB
 {
 private:
     DBParams m_db_params;
-    std::unique_ptr<CDBWrapper> m_db;
+    std::unique_ptr<DBWrapper> m_db;
 public:
     BlockTreeDB(DBParams db_params);
     void WriteBatchSync(const std::vector<std::pair<int, const CBlockFileInfo*>>& fileInfo, int nLastFile, const std::vector<const CBlockIndex*>& blockinfo);
