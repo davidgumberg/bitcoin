@@ -26,6 +26,7 @@ add_library(bitcoinkernel
   ../consensus/tx_check.cpp
   ../consensus/tx_verify.cpp
   ../dbwrapper/dbwrapper.cpp
+  ../dbwrapper/leveldb.cpp
   ../deploymentinfo.cpp
   ../deploymentstatus.cpp
   ../flatfile.cpp

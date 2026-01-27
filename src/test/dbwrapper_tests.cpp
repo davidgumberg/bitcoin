@@ -3,6 +3,7 @@
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
 #include <dbwrapper/dbwrapper.h>
+#include <dbwrapper/dbwrapper_default.h>
 #include <test/util/random.h>
 #include <test/util/setup_common.h>
 #include <uint256.h>

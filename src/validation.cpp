@@ -19,6 +19,7 @@
 #include <consensus/validation.h>
 #include <cuckoocache.h>
 #include <dbwrapper/dbwrapper.h>
+#include <dbwrapper/dbwrapper_default.h>
 #include <flatfile.h>
 #include <hash.h>
 #include <kernel/chainparams.h>

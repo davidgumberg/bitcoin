@@ -7,6 +7,7 @@
 
 #include <attributes.h>
 #include <dbwrapper/dbwrapper.h>
+#include <dbwrapper/dbwrapper_default.h>
 #include <interfaces/chain.h>
 #include <kernel/cs_main.h>
 #include <threadsafety.h>

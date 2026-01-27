@@ -9,6 +9,7 @@
 #include <consensus/params.h>
 #include <crypto/hex_base.h>
 #include <dbwrapper/dbwrapper.h>
+#include <dbwrapper/dbwrapper_default.h>
 #include <flatfile.h>
 #include <hash.h>
 #include <kernel/blockmanager_opts.h>

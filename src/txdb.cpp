@@ -7,6 +7,7 @@
 
 #include <coins.h>
 #include <dbwrapper/dbwrapper.h>
+#include <dbwrapper/dbwrapper_default.h>
 #include <logging.h>
 #include <primitives/transaction.h>
 #include <random.h>

@@ -8,6 +8,7 @@
 
 #include <coins.h>
 #include <dbwrapper/dbwrapper.h>
+#include <dbwrapper/dbwrapper_default.h>
 #include <kernel/caches.h>
 #include <kernel/cs_main.h>
 #include <sync.h>

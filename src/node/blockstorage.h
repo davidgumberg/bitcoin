@@ -8,6 +8,7 @@
 #include <attributes.h>
 #include <chain.h>
 #include <dbwrapper/dbwrapper.h>
+#include <dbwrapper/dbwrapper_default.h>
 #include <flatfile.h>
 #include <kernel/blockmanager_opts.h>
 #include <kernel/chainparams.h>
