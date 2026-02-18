@@ -3716,7 +3716,9 @@ void PeerManagerImpl::ProcessMessage(CNode& pfrom, const std::string& msg_type, 
             // cmpctblock messages.
             // We send this to non-NODE NETWORK peers as well, because
             // they may wish to request compact blocks from us
-            MakeAndPushMessage(pfrom, NetMsgType::SENDCMPCT, /*high_bandwidth=*/false, /*version=*/CMPCTBLOCKS_VERSION);
+            MakeAndPushMessage(pfrom, NetMsgType::SENDCMPCT, /*high_bandwidth=*/true, /*version=*/CMPCTBLOCKS_VERSION);
+            pfrom.m_bip152_highbandwidth_to = true;
+            WITH_LOCK(cs_main, lNodesAnnouncingHeaderAndIDs.push_back(pfrom.GetId()));
         }
 
         if (m_txreconciliation) {
