@@ -1197,6 +1197,7 @@ bool PeerManagerImpl::IsBlockRequestedFromOutbound(const uint256& hash)
 
 void PeerManagerImpl::RemoveBlockRequest(const uint256& hash, std::optional<NodeId> from_peer)
 {
+    LogError("Removing request for block %s", hash.ToString());
     auto range = mapBlocksInFlight.equal_range(hash);
     if (range.first == range.second) {
         // Block was not requested from any peer
@@ -2197,6 +2198,10 @@ void PeerManagerImpl::BlockChecked(const std::shared_ptr<const CBlock>& block, c
     }
     if (it != mapBlockSource.end())
         mapBlockSource.erase(it);
+
+    for (auto block : mapBlocksInFlight) {
+        LogError("%s still in flight!", block.first.ToString());
+    }
 }
 
 //////////////////////////////////////////////////////////////////////////////

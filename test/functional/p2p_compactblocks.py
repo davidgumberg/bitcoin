@@ -998,6 +998,7 @@ class CompactBlocksTest(BitcoinTestFramework):
         node = self.nodes[0]
         # create new p2p connection for a fresh state w/o any prior sendcmpct messages sent
         unsolicited_peer = self.nodes[0].add_p2p_connection(TestP2PConn())
+        unsolicited_peer.send_and_ping(msg_sendcmpct(announce=False, version=2))
 
         def build_compact_block():
             # generate a compact block to send
@@ -1030,7 +1031,11 @@ class CompactBlocksTest(BitcoinTestFramework):
         unsolicited_peer.send_and_ping(msg)
         with p2p_lock:
             assert "getblocktxn" in unsolicited_peer.last_message
+        # all but the first transaction
+        msg = msg_blocktxn(BlockTransactions(blockhash=block.hash_int, transactions=block.vtx[1:]))
+        unsolicited_peer.send_and_ping(msg)
         unsolicited_peer.clear_getblocktxn()
+        self.assert_highbandwidth_states(node, idx=-1, hb_to=True, hb_from=False)
 
         # The node will ask for transactions from an unsolicited compact block
         # it receives from a high bandwidth peer, we need to use one set up earlier,

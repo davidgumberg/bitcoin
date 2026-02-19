@@ -1733,8 +1733,8 @@ class msg_blocktxn:
     __slots__ = ("block_transactions",)
     msgtype = b"blocktxn"
 
-    def __init__(self):
-        self.block_transactions = BlockTransactions()
+    def __init__(self, block_transactions=None):
+        self.block_transactions = block_transactions if block_transactions is not None else BlockTransactions()
 
     def deserialize(self, f):
         self.block_transactions.deserialize(f)
