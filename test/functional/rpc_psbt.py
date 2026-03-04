@@ -274,6 +274,55 @@ class PSBTTest(BitcoinTestFramework):
         assert "participant_pubkeys" in out_participant_pks
         assert_equal(out_participant_pks["participant_pubkeys"], [out_pubkey1.hex(), out_pubkey2.hex()])
 
+    def test_decodepsbt_musig2_invalid_pubkey_rejected(self):
+        self.log.info("Test decoding PSBT with MuSig2 fields with invalid pubkeys are rejected")
+        node = self.nodes[0]
+
+        _, valid_pk = generate_keypair()
+        invalid_pk = b'\x00' * 33
+
+        def create_musig_psbt(key_type, part_pk, agg_pk, value):
+            tx = CTransaction()
+            tx.vin = [CTxIn(outpoint=COutPoint(hash=0, n=0))]
+            tx.vout = [CTxOut(nValue=1, scriptPubKey=CScript([OP_TRUE]))]
+
+            musig_key = bytes([key_type]) + part_pk + agg_pk
+
+            psbt = PSBT()
+            psbt.g = PSBTMap({PSBT_GLOBAL_UNSIGNED_TX: tx.serialize()})
+            psbt.i = [PSBTMap({musig_key: value})]
+            psbt.o = [PSBTMap()]
+            return psbt.to_base64()
+
+        test_cases = [
+            {
+                "name": "musig2_partial_sigs",
+                "type": PSBT_IN_MUSIG2_PARTIAL_SIG,
+                "value": b'\x00' * 32
+            },
+            {
+                "name": "musig2_pubnonces",
+                "type": PSBT_IN_MUSIG2_PUB_NONCE,
+                "value": b'\x00' * 66
+            }
+        ]
+
+        for test in test_cases:
+            self.log.info(f"- For {test["name"]}")
+            self.log.info("  - Invalid participant key is rejected")
+            psbt_invalid_part = create_musig_psbt(test["type"], invalid_pk, valid_pk, test["value"])
+            assert_raises_rpc_error(-22, "TX decode failed", node.decodepsbt, psbt_invalid_part)
+
+            self.log.info("  - Invalid aggregate key is rejected")
+            psbt_invalid_agg = create_musig_psbt(test["type"], valid_pk, invalid_pk, test["value"])
+            assert_raises_rpc_error(-22, "TX decode failed", node.decodepsbt, psbt_invalid_agg)
+
+            self.log.info("  - Valid key pairs are accepted and deserialized as expected.")
+            psbt_valid = create_musig_psbt(test["type"], valid_pk, valid_pk, test["value"])
+            decoded = node.decodepsbt(psbt_valid)
+            assert_equal(decoded["inputs"][0][test["name"]][0]["participant_pubkey"], valid_pk.hex())
+            assert_equal(decoded["inputs"][0][test["name"]][0]["aggregate_pubkey"], valid_pk.hex())
+
     def test_sighash_mismatch(self):
         self.log.info("Test sighash type mismatches")
         self.nodes[0].createwallet("sighash_mismatch")
@@ -1169,6 +1218,7 @@ class PSBTTest(BitcoinTestFramework):
             assert_equal(res_input[preimage_key][hash.hex()], preimage.hex())
 
         self.test_decodepsbt_musig2_input_output_types()
+        self.test_decodepsbt_musig2_invalid_pubkey_rejected()
 
         self.log.info("Test that combining PSBTs with different transactions fails")
         tx = CTransaction()
