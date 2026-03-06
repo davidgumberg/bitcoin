@@ -15,8 +15,10 @@
 #include <script/signingprovider.h>
 #include <span.h>
 #include <streams.h>
+#include <uint256.h>
 
 #include <optional>
+#include <bitset>
 
 namespace node {
 enum class TransactionError;
@@ -262,6 +264,43 @@ void DeserializeMuSig2ParticipantDataIdentifier(Stream& skey, CPubKey& agg_pub, 
     }
 }
 
+// A helper function for deciding whether or not a field exists in a PSBT,
+// PSBTInput, or PSBTOutput.
+template <typename T>
+static bool Exists(const T& val) {
+    if constexpr (std::is_convertible_v<T, bool>) {
+        return static_cast<bool>(val);
+    } else if constexpr (requires { { val.has_value() } -> std::convertible_to<bool>; }) {
+        return val.has_value();
+    } else if constexpr (requires { { val.IsNull() } -> std::convertible_to<bool>; }) {
+        return !val.IsNull();
+    } else if constexpr (requires { { val.empty() } -> std::convertible_to<bool>; }) {
+        return !val.empty();
+    } else {
+        static_assert(false);
+    }
+}
+
+// If it's an optional, unwrap it, if not, as-is.
+template <typename T>
+static const T& Unwrap(const T& val) { return val; }
+template <typename T>
+static const T& Unwrap(const std::optional<T>& val)
+{
+    Assume(val.has_value());
+    return *val;
+}
+
+void MaybeSerializeKV(auto& s, auto keytype, const auto& value, bool size_prefix_value = true) {
+    if (Exists(value)) {
+        SerializeToVector(s, CompactSizeWriter(keytype));
+        if (size_prefix_value)
+            SerializeToVector(s, Unwrap(value));
+        else
+            s << Unwrap(value);
+    }
+}
+
 /** A structure for PSBTs which contain per-input information */
 struct PSBTInput
 {
@@ -277,6 +316,12 @@ struct PSBTInput
     std::map<uint256, std::vector<unsigned char>> sha256_preimages;
     std::map<uint160, std::vector<unsigned char>> hash160_preimages;
     std::map<uint256, std::vector<unsigned char>> hash256_preimages;
+
+    Txid prev_txid;
+    std::optional<uint32_t> prev_out;
+    std::optional<uint32_t> sequence;
+    std::optional<uint32_t> time_locktime;
+    std::optional<uint32_t> height_locktime;
 
     // Taproot fields
     std::vector<unsigned char> m_tap_key_sig;
@@ -305,15 +350,11 @@ struct PSBTInput
 
     template <typename Stream>
     inline void Serialize(Stream& s) const {
-        // Write the utxo
         if (non_witness_utxo) {
             SerializeToVector(s, CompactSizeWriter(PSBT_IN_NON_WITNESS_UTXO));
             SerializeToVector(s, TX_NO_WITNESS(non_witness_utxo));
         }
-        if (!witness_utxo.IsNull()) {
-            SerializeToVector(s, CompactSizeWriter(PSBT_IN_WITNESS_UTXO));
-            SerializeToVector(s, witness_utxo);
-        }
+        MaybeSerializeKV(s, PSBT_IN_WITNESS_UTXO, witness_utxo);
 
         if (final_script_sig.empty() && final_script_witness.IsNull()) {
             // Write any partial signatures
@@ -322,56 +363,26 @@ struct PSBTInput
                 s << sig_pair.second.second;
             }
 
-            // Write the sighash type
-            if (sighash_type != std::nullopt) {
-                SerializeToVector(s, CompactSizeWriter(PSBT_IN_SIGHASH));
-                SerializeToVector(s, *sighash_type);
-            }
-
-            // Write the redeem script
-            if (!redeem_script.empty()) {
-                SerializeToVector(s, CompactSizeWriter(PSBT_IN_REDEEMSCRIPT));
-                s << redeem_script;
-            }
-
-            // Write the witness script
-            if (!witness_script.empty()) {
-                SerializeToVector(s, CompactSizeWriter(PSBT_IN_WITNESSSCRIPT));
-                s << witness_script;
-            }
+            MaybeSerializeKV(s, PSBT_IN_SIGHASH, sighash_type);
+            MaybeSerializeKV(s, PSBT_IN_REDEEMSCRIPT, redeem_script, false);
+            MaybeSerializeKV(s, PSBT_IN_WITNESSSCRIPT, witness_script, false);
 
             // Write any hd keypaths
             SerializeHDKeypaths(s, hd_keypaths, CompactSizeWriter(PSBT_IN_BIP32_DERIVATION));
 
-            // Write any ripemd160 preimage
-            for (const auto& [hash, preimage] : ripemd160_preimages) {
-                SerializeToVector(s, CompactSizeWriter(PSBT_IN_RIPEMD160), std::span{hash});
-                s << preimage;
-            }
+            const auto write_preimages = [&](auto keytype, const auto& preimage_map) {
+                for (const auto& [hash, preimage] : preimage_map) {
+                    SerializeToVector(s, CompactSizeWriter(keytype), std::span{hash});
+                    s << preimage;
+                }
+            };
 
-            // Write any sha256 preimage
-            for (const auto& [hash, preimage] : sha256_preimages) {
-                SerializeToVector(s, CompactSizeWriter(PSBT_IN_SHA256), std::span{hash});
-                s << preimage;
-            }
+            write_preimages(PSBT_IN_RIPEMD160, ripemd160_preimages);
+            write_preimages(PSBT_IN_SHA256, sha256_preimages);
+            write_preimages(PSBT_IN_HASH160, hash160_preimages);
+            write_preimages(PSBT_IN_HASH256, hash256_preimages);
 
-            // Write any hash160 preimage
-            for (const auto& [hash, preimage] : hash160_preimages) {
-                SerializeToVector(s, CompactSizeWriter(PSBT_IN_HASH160), std::span{hash});
-                s << preimage;
-            }
-
-            // Write any hash256 preimage
-            for (const auto& [hash, preimage] : hash256_preimages) {
-                SerializeToVector(s, CompactSizeWriter(PSBT_IN_HASH256), std::span{hash});
-                s << preimage;
-            }
-
-            // Write taproot key sig
-            if (!m_tap_key_sig.empty()) {
-                SerializeToVector(s, PSBT_IN_TAP_KEY_SIG);
-                s << m_tap_key_sig;
-            }
+            MaybeSerializeKV(s, PSBT_IN_TAP_KEY_SIG, m_tap_key_sig, false);
 
             // Write taproot script sigs
             for (const auto& [pubkey_leaf, sig] : m_tap_script_sigs) {
@@ -402,17 +413,8 @@ struct PSBTInput
                 s << value;
             }
 
-            // Write taproot internal key
-            if (!m_tap_internal_key.IsNull()) {
-                SerializeToVector(s, PSBT_IN_TAP_INTERNAL_KEY);
-                s << ToByteVector(m_tap_internal_key);
-            }
-
-            // Write taproot merkle root
-            if (!m_tap_merkle_root.IsNull()) {
-                SerializeToVector(s, PSBT_IN_TAP_MERKLE_ROOT);
-                SerializeToVector(s, m_tap_merkle_root);
-            }
+            MaybeSerializeKV(s, PSBT_IN_TAP_INTERNAL_KEY, m_tap_internal_key, false);
+            MaybeSerializeKV(s, PSBT_IN_TAP_MERKLE_ROOT, m_tap_merkle_root);
 
             // Write MuSig2 Participants
             for (const auto& [agg_pubkey, part_pubs] : m_musig2_participants) {
@@ -452,16 +454,14 @@ struct PSBTInput
             }
         }
 
-        // Write script sig
-        if (!final_script_sig.empty()) {
-            SerializeToVector(s, CompactSizeWriter(PSBT_IN_SCRIPTSIG));
-            s << final_script_sig;
-        }
-        // write script witness
-        if (!final_script_witness.IsNull()) {
-            SerializeToVector(s, CompactSizeWriter(PSBT_IN_SCRIPTWITNESS));
-            SerializeToVector(s, final_script_witness.stack);
-        }
+        MaybeSerializeKV(s, PSBT_IN_SCRIPTSIG, final_script_sig, false);
+        MaybeSerializeKV(s, PSBT_IN_SCRIPTWITNESS, final_script_witness.stack);
+
+        MaybeSerializeKV(s, PSBT_IN_PREVIOUS_TXID, prev_txid);
+        MaybeSerializeKV(s, PSBT_IN_OUTPUT_INDEX, prev_out);
+        MaybeSerializeKV(s, PSBT_IN_SEQUENCE, sequence);
+        MaybeSerializeKV(s, PSBT_IN_REQUIRED_TIME_LOCKTIME, time_locktime);
+        MaybeSerializeKV(s, PSBT_IN_REQUIRED_HEIGHT_LOCKTIME, height_locktime);
 
         // Write proprietary things
         for (const auto& entry : m_proprietary) {
@@ -693,6 +693,70 @@ struct PSBTInput
                     hash256_preimages.emplace(hash, std::move(preimage));
                     break;
                 }
+                case PSBT_IN_PREVIOUS_TXID:
+                {
+                    if (!key_lookup.emplace(key).second) {
+                        throw std::ios_base::failure("Duplicate Key, previous txid is already provided");
+                    } else if (key.size() != 1) {
+                        throw std::ios_base::failure("Previous txid key is more than one byte type");
+                    }
+                    UnserializeFromVector(s, prev_txid);
+                    break;
+                }
+                case PSBT_IN_OUTPUT_INDEX:
+                {
+                    if (!key_lookup.emplace(key).second) {
+                        throw std::ios_base::failure("Duplicate Key, previous output's index is already provided");
+                    } else if (key.size() != 1) {
+                        throw std::ios_base::failure("Previous output's index is more than one byte type");
+                    }
+                    uint32_t v;
+                    UnserializeFromVector(s, v);
+                    prev_out = v;
+                    break;
+                }
+                case PSBT_IN_SEQUENCE:
+                {
+                    if (!key_lookup.emplace(key).second) {
+                        throw std::ios_base::failure("Duplicate Key, sequence is already provided");
+                    } else if (key.size() != 1) {
+                        throw std::ios_base::failure("Sequence key is more than one byte type");
+                    }
+                    uint32_t v;
+                    UnserializeFromVector(s, v);
+                    sequence = v;
+                    break;
+                }
+                case PSBT_IN_REQUIRED_TIME_LOCKTIME:
+                {
+                    if (!key_lookup.emplace(key).second) {
+                        throw std::ios_base::failure("Duplicate Key, required time based locktime is already provided");
+                    } else if (key.size() != 1) {
+                        throw std::ios_base::failure("Required time based locktime is more than one byte type");
+                    }
+                    uint32_t v;
+                    UnserializeFromVector(s, v);
+                    if (v < LOCKTIME_THRESHOLD) {
+                        throw std::ios_base::failure("Required time based locktime is invalid (less than 500000000)");
+                    }
+                    time_locktime = v;
+                    break;
+                }
+                case PSBT_IN_REQUIRED_HEIGHT_LOCKTIME:
+                {
+                    if (!key_lookup.emplace(key).second) {
+                        throw std::ios_base::failure("Duplicate Key, required height based locktime is already provided");
+                    } else if (key.size() != 1) {
+                        throw std::ios_base::failure("Required height based locktime is more than one byte type");
+                    }
+                    uint32_t v;
+                    UnserializeFromVector(s, v);
+                    if (v >= LOCKTIME_THRESHOLD) {
+                        throw std::ios_base::failure("Required time based locktime is invalid (greater than or equal to 500000000)");
+                    }
+                    height_locktime = v;
+                    break;
+                }
                 case PSBT_IN_TAP_KEY_SIG:
                 {
                     if (!key_lookup.emplace(key).second) {
@@ -884,10 +948,15 @@ struct PSBTOutput
     CScript redeem_script;
     CScript witness_script;
     std::map<CPubKey, KeyOriginInfo> hd_keypaths;
+
+    std::optional<CAmount> amount;
+    std::optional<CScript> script;
+
     XOnlyPubKey m_tap_internal_key;
     std::vector<std::tuple<uint8_t, uint8_t, std::vector<unsigned char>>> m_tap_tree;
     std::map<XOnlyPubKey, std::pair<std::set<uint256>, KeyOriginInfo>> m_tap_bip32_paths;
     std::map<CPubKey, std::vector<CPubKey>> m_musig2_participants;
+
     std::map<std::vector<unsigned char>, std::vector<unsigned char>> unknown;
     std::set<PSBTProprietary> m_proprietary;
 
@@ -899,20 +968,14 @@ struct PSBTOutput
 
     template <typename Stream>
     inline void Serialize(Stream& s) const {
-        // Write the redeem script
-        if (!redeem_script.empty()) {
-            SerializeToVector(s, CompactSizeWriter(PSBT_OUT_REDEEMSCRIPT));
-            s << redeem_script;
-        }
-
-        // Write the witness script
-        if (!witness_script.empty()) {
-            SerializeToVector(s, CompactSizeWriter(PSBT_OUT_WITNESSSCRIPT));
-            s << witness_script;
-        }
+        MaybeSerializeKV(s, PSBT_OUT_REDEEMSCRIPT, redeem_script, false);
+        MaybeSerializeKV(s, PSBT_OUT_WITNESSSCRIPT, witness_script, false);
 
         // Write any hd keypaths
         SerializeHDKeypaths(s, hd_keypaths, CompactSizeWriter(PSBT_OUT_BIP32_DERIVATION));
+
+        MaybeSerializeKV(s, PSBT_OUT_AMOUNT, amount);
+        MaybeSerializeKV(s, PSBT_OUT_SCRIPT, script, false);
 
         // Write proprietary things
         for (const auto& entry : m_proprietary) {
@@ -920,11 +983,7 @@ struct PSBTOutput
             s << entry.value;
         }
 
-        // Write taproot internal key
-        if (!m_tap_internal_key.IsNull()) {
-            SerializeToVector(s, PSBT_OUT_TAP_INTERNAL_KEY);
-            s << ToByteVector(m_tap_internal_key);
-        }
+        MaybeSerializeKV(s, PSBT_OUT_TAP_INTERNAL_KEY, m_tap_internal_key);
 
         // Write taproot tree
         if (!m_tap_tree.empty()) {
@@ -1022,6 +1081,30 @@ struct PSBTOutput
                 case PSBT_OUT_BIP32_DERIVATION:
                 {
                     DeserializeHDKeypaths(s, key, hd_keypaths);
+                    break;
+                }
+                case PSBT_OUT_AMOUNT:
+                {
+                    if (!key_lookup.emplace(key).second) {
+                        throw std::ios_base::failure("Duplicate Key, output amount is already provided");
+                    } else if (key.size() != 1) {
+                        throw std::ios_base::failure("Output amount key is more than one byte type");
+                    }
+                    CAmount v;
+                    UnserializeFromVector(s, v);
+                    amount = v;
+                    break;
+                }
+                case PSBT_OUT_SCRIPT:
+                {
+                    if (!key_lookup.emplace(key).second) {
+                        throw std::ios_base::failure("Duplicate Key, output script is already provided");
+                    } else if (key.size() != 1) {
+                        throw std::ios_base::failure("Output script key is more than one byte type");
+                    }
+                    CScript v;
+                    s >> v;
+                    script = v;
                     break;
                 }
                 case PSBT_OUT_TAP_INTERNAL_KEY:
@@ -1146,6 +1229,9 @@ struct PartiallySignedTransaction
     // We use a vector of CExtPubKey in the event that there happens to be the same KeyOriginInfos for different CExtPubKeys
     // Note that this map swaps the key and values from the serialization
     std::map<KeyOriginInfo, std::set<CExtPubKey>> m_xpubs;
+    std::optional<uint32_t> tx_version;
+    std::optional<uint32_t> fallback_locktime;
+    std::optional<std::bitset<8>> m_tx_modifiable;
     std::vector<PSBTInput> inputs;
     std::vector<PSBTOutput> outputs;
     std::map<std::vector<unsigned char>, std::vector<unsigned char>> unknown;
@@ -1173,7 +1259,6 @@ struct PartiallySignedTransaction
 
     template <typename Stream>
     inline void Serialize(Stream& s) const {
-
         // magic bytes
         s << PSBT_MAGIC_BYTES;
 
@@ -1193,6 +1278,20 @@ struct PartiallySignedTransaction
                 SerializeToVector(s, PSBT_GLOBAL_XPUB, ser_xpub);
                 SerializeHDKeypath(s, xpub_pair.first);
             }
+        }
+
+        MaybeSerializeKV(s, PSBT_GLOBAL_TX_VERSION, tx_version);
+        MaybeSerializeKV(s, PSBT_GLOBAL_FALLBACK_LOCKTIME, fallback_locktime);
+
+        if (m_version != std::nullopt && *m_version >= 2) {
+            SerializeToVector(s, CompactSizeWriter(PSBT_GLOBAL_INPUT_COUNT));
+            SerializeToVector(s, CompactSizeWriter(inputs.size()));
+            SerializeToVector(s, CompactSizeWriter(PSBT_GLOBAL_OUTPUT_COUNT));
+            SerializeToVector(s, CompactSizeWriter(outputs.size()));
+        }
+        if (m_tx_modifiable != std::nullopt) {
+            SerializeToVector(s, CompactSizeWriter(PSBT_GLOBAL_TX_MODIFIABLE));
+            SerializeToVector(s, static_cast<uint8_t>(m_tx_modifiable->to_ulong()));
         }
 
         // PSBT version
@@ -1244,6 +1343,8 @@ struct PartiallySignedTransaction
 
         // Read global data
         bool found_sep = false;
+        uint64_t input_count = 0;
+        uint64_t output_count = 0;
         while(!s.empty()) {
             // Read the key of format "<keylen><keytype><keydata>" after which
             // "key" will contain "<keytype><keydata>"
@@ -1282,6 +1383,67 @@ struct PartiallySignedTransaction
                             throw std::ios_base::failure("Unsigned tx does not have empty scriptSigs and scriptWitnesses.");
                         }
                     }
+                    // Set the input and output counts
+                    input_count = tx->vin.size();
+                    output_count = tx->vout.size();
+                    break;
+                }
+                case PSBT_GLOBAL_TX_VERSION:
+                {
+                    if (!key_lookup.emplace(key).second) {
+                        throw std::ios_base::failure("Duplicate Key, global transaction version is already provided");
+                    } else if (key.size() != 1) {
+                        throw std::ios_base::failure("Global transaction version key is more than one byte type");
+                    }
+                    uint32_t v;
+                    UnserializeFromVector(s, v);
+                    tx_version = v;
+                    break;
+                }
+                case PSBT_GLOBAL_FALLBACK_LOCKTIME:
+                {
+                    if (!key_lookup.emplace(key).second) {
+                        throw std::ios_base::failure("Duplicate Key, global fallback locktime is already provided");
+                    } else if (key.size() != 1) {
+                        throw std::ios_base::failure("Global fallback locktime key is more than one byte type");
+                    }
+                    uint32_t v;
+                    UnserializeFromVector(s, v);
+                    fallback_locktime = v;
+                    break;
+                }
+                case PSBT_GLOBAL_INPUT_COUNT:
+                {
+                    if (!key_lookup.emplace(key).second) {
+                        throw std::ios_base::failure("Duplicate Key, global input count is already provided");
+                    } else if (key.size() != 1) {
+                        throw std::ios_base::failure("Global input count key is more than one byte type");
+                    }
+                    CompactSizeReader reader(input_count);
+                    UnserializeFromVector(s, reader);
+                    break;
+                }
+                case PSBT_GLOBAL_OUTPUT_COUNT:
+                {
+                    if (!key_lookup.emplace(key).second) {
+                        throw std::ios_base::failure("Duplicate Key, global output count is already provided");
+                    } else if (key.size() != 1) {
+                        throw std::ios_base::failure("Global output count key is more than one byte type");
+                    }
+                    CompactSizeReader reader(output_count);
+                    UnserializeFromVector(s, reader);
+                    break;
+                }
+                case PSBT_GLOBAL_TX_MODIFIABLE:
+                {
+                    if (!key_lookup.emplace(key).second) {
+                        throw std::ios_base::failure("Duplicate Key, tx modifiable flags is already provided");
+                    } else if (key.size() != 1) {
+                        throw std::ios_base::failure("Global tx modifiable flags key is more than one byte type");
+                    }
+                    uint8_t tx_mod;
+                    UnserializeFromVector(s, tx_mod);
+                    m_tx_modifiable = tx_mod;
                     break;
                 }
                 case PSBT_GLOBAL_XPUB:
@@ -1367,7 +1529,7 @@ struct PartiallySignedTransaction
 
         // Read input data
         unsigned int i = 0;
-        while (!s.empty() && i < tx->vin.size()) {
+        while (!s.empty() && i < input_count) {
             PSBTInput input;
             s >> input;
             inputs.push_back(input);
@@ -1384,20 +1546,20 @@ struct PartiallySignedTransaction
             ++i;
         }
         // Make sure that the number of inputs matches the number of inputs in the transaction
-        if (inputs.size() != tx->vin.size()) {
+        if (inputs.size() != input_count) {
             throw std::ios_base::failure("Inputs provided does not match the number of inputs in transaction.");
         }
 
         // Read output data
         i = 0;
-        while (!s.empty() && i < tx->vout.size()) {
+        while (!s.empty() && i < output_count) {
             PSBTOutput output;
             s >> output;
             outputs.push_back(output);
             ++i;
         }
         // Make sure that the number of outputs matches the number of outputs in the transaction
-        if (outputs.size() != tx->vout.size()) {
+        if (outputs.size() != output_count) {
             throw std::ios_base::failure("Outputs provided does not match the number of outputs in transaction.");
         }
     }
