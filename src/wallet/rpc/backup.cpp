@@ -148,49 +148,50 @@ static UniValue ProcessDescriptorImport(CWallet& wallet, const UniValue& data, c
             throw JSONRPCError(RPC_INVALID_PARAMETER, "Descriptor not found.");
         }
 
-        const std::string& descriptor = data["desc"].get_str();
+        std::optional<bool> internal;
+        if (data.exists("internal")) internal = data["internal"].get_bool();
+        std::optional<std::string> label;
+        if (data.exists("label")) label = LabelFromValue(data["label"]);
+        std::optional<std::pair<int64_t, int64_t>> range;
+        if (data.exists("range")) {
+            auto r = ParseDescriptorRange(data["range"]);
+            range = {r.first, r.second};
+        }
+
+        std::optional<int64_t> next_index_arg;
+        if (data.exists("next_index")) next_index_arg = data["next_index"].getInt<int64_t>();
+
         const bool active = data.exists("active") ? data["active"].get_bool() : false;
-        const std::string label{LabelFromValue(data["label"])};
 
         // Parse descriptor string
         FlatSigningProvider keys;
         std::string error;
-        auto parsed_descs = Parse(descriptor, keys, error, /* require_checksum = */ true);
+        auto parsed_descs = Parse(data["desc"].get_str(), keys, error, /* require_checksum = */ true);
         if (parsed_descs.empty()) {
             throw JSONRPCError(RPC_INVALID_ADDRESS_OR_KEY, error);
         }
-        std::optional<bool> internal;
-        if (data.exists("internal")) {
-            if (parsed_descs.size() > 1) {
-                throw JSONRPCError(RPC_INVALID_ADDRESS_OR_KEY, "Cannot have multipath descriptor while also specifying \'internal\'");
-            }
-            internal = data["internal"].get_bool();
+        if (internal.has_value() && parsed_descs.size() > 1) {
+            throw JSONRPCError(RPC_INVALID_ADDRESS_OR_KEY, "Cannot have multipath descriptor while also specifying \'internal\'");
         }
 
         // Range check
         std::optional<bool> is_ranged;
         int64_t range_start = 0, range_end = 1, next_index = 0;
-        if (!parsed_descs.at(0)->IsRange() && data.exists("range")) {
+        if (!parsed_descs.at(0)->IsRange() && range.has_value()) {
             throw JSONRPCError(RPC_INVALID_PARAMETER, "Range should not be specified for an un-ranged descriptor");
         } else if (parsed_descs.at(0)->IsRange()) {
-            if (data.exists("range")) {
-                auto range = ParseDescriptorRange(data["range"]);
-                range_start = range.first;
-                range_end = range.second + 1; // Specified range end is inclusive, but we need range end as exclusive
+            if (range.has_value()) {
+                range_start = range->first;
+                range_end = range->second + 1; // Specified range end is inclusive, but we need range end as exclusive
             } else {
                 warnings.push_back("Range not given, using default keypool range");
                 range_start = 0;
                 range_end = wallet.m_keypool_size;
             }
-            next_index = range_start;
+            next_index = next_index_arg.value_or(range_start);
             is_ranged = true;
-
-            if (data.exists("next_index")) {
-                next_index = data["next_index"].getInt<int64_t>();
-                // bound checks
-                if (next_index < range_start || next_index >= range_end) {
-                    throw JSONRPCError(RPC_INVALID_PARAMETER, "next_index is out of range");
-                }
+            if (next_index < range_start || next_index >= range_end) {
+                throw JSONRPCError(RPC_INVALID_PARAMETER, "next_index is out of range");
             }
         }
 
@@ -200,18 +201,18 @@ static UniValue ProcessDescriptorImport(CWallet& wallet, const UniValue& data, c
         }
 
         // Multipath descriptors should not have a label
-        if (parsed_descs.size() > 1 && data.exists("label")) {
+        if (parsed_descs.size() > 1 && label.has_value()) {
             throw JSONRPCError(RPC_INVALID_PARAMETER, "Multipath descriptors should not have a label");
         }
 
         // Ranged descriptors should not have a label
-        if (is_ranged.has_value() && is_ranged.value() && data.exists("label")) {
+        if (is_ranged.has_value() && is_ranged.value() && label.has_value()) {
             throw JSONRPCError(RPC_INVALID_PARAMETER, "Ranged descriptors should not have a label");
         }
 
         bool desc_internal = internal.has_value() && internal.value();
         // Internal addresses should not have a label either
-        if (desc_internal && data.exists("label")) {
+        if (desc_internal && label.has_value()) {
             throw JSONRPCError(RPC_INVALID_PARAMETER, "Internal addresses should not have a label");
         }
 
@@ -268,10 +269,10 @@ static UniValue ProcessDescriptorImport(CWallet& wallet, const UniValue& data, c
             WalletDescriptor w_desc(std::move(parsed_desc), timestamp, range_start, range_end, next_index);
 
             // Add descriptor to the wallet
-            auto spk_manager_res = wallet.AddWalletDescriptor(w_desc, keys, label, desc_internal);
+            auto spk_manager_res = wallet.AddWalletDescriptor(w_desc, keys, label.value(), desc_internal);
 
             if (!spk_manager_res) {
-                throw JSONRPCError(RPC_WALLET_ERROR, strprintf("Could not add descriptor '%s': %s", descriptor, util::ErrorString(spk_manager_res).original));
+                throw JSONRPCError(RPC_WALLET_ERROR, strprintf("Could not add descriptor '%s': %s", data["desc"].get_str(), util::ErrorString(spk_manager_res).original));
             }
 
             auto& spk_manager = spk_manager_res.value().get();
