@@ -4,6 +4,7 @@
 
 #include <interfaces/wallet.h>
 
+#include <chain.h>
 #include <common/args.h>
 #include <consensus/amount.h>
 #include <interfaces/chain.h>
@@ -437,7 +438,7 @@ public:
         }
 
         if (rescan) {
-            m_wallet->RescanFromTime(lowest_timestamp, reserver, /*update=*/true);
+            int64_t scanned_time = m_wallet->RescanFromTime(lowest_timestamp, reserver, /*update=*/true);
             m_wallet->ResubmitWalletTransactions(node::TxBroadcast::MEMPOOL_NO_BROADCAST, /*force=*/true);
 
             if (m_wallet->IsAbortingRescan()) {
@@ -451,9 +452,44 @@ public:
                 }
                 return response;
             }
+
+            if (scanned_time > lowest_timestamp) {
+                for (size_t i = 0; i < requests.size(); ++i) {
+                    const int64_t req_timestamp = requests[i].timestamp;
+                    wallet::ImportDescriptorResult& r = response[i];
+
+                    if (scanned_time > req_timestamp && r.success) {
+                        r.success = false;
+                        r.reason = wallet::ImportDescriptorResult::FailureReason::MISC_ERROR;
+
+                        std::string error_msg = strprintf(
+                            "Rescan failed for descriptor with timestamp %d. There "
+                            "was an error reading a block from time %d, which is after or within %d seconds "
+                            "of key creation, and could contain transactions pertaining to the desc. As a "
+                            "result, transactions and coins using this desc may not appear in the wallet.",
+                            req_timestamp, scanned_time - TIMESTAMP_WINDOW - 1, TIMESTAMP_WINDOW);
+
+                        if (m_wallet->chain().havePruned()) {
+                            error_msg += " This error could be caused by pruning or data corruption "
+                                    "(see bitcoind log for details) and could be dealt with by downloading and "
+                                    "rescanning the relevant blocks (see -reindex option and rescanblockchain RPC).";
+                        } else if (m_wallet->chain().hasAssumedValidChain()) {
+                            error_msg += " This error is likely caused by an in-progress assumeutxo "
+                                    "background sync. Check logs or getchainstates RPC for assumeutxo background "
+                                    "sync progress and try again later.";
+                        } else {
+                            error_msg += " This error could potentially caused by data corruption. If "
+                                    "the issue persists you may want to reindex (see -reindex option).";
+                        }
+
+                        r.error = error_msg;
+                    }
+                }
+            }
         }
         return response;
     }
+
     WalletBalances getBalances() override
     {
         const auto bal = GetBalance(*m_wallet);
