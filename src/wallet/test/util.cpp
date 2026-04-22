@@ -53,7 +53,7 @@ std::shared_ptr<CWallet> TestCreateWallet(std::unique_ptr<WalletDatabase> databa
 {
     bilingual_str _error;
     std::vector<bilingual_str> _warnings;
-    auto wallet = CWallet::CreateNew(context, "", std::move(database), create_flags, _error, _warnings);
+    auto wallet = CWallet::CreateNew(context, "", std::move(database), create_flags, /*create_blank=*/false,_error, _warnings);
     NotifyWalletLoaded(context, wallet);
     if (context.chain) {
         wallet->postInitProcess();
