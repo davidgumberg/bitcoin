@@ -1239,8 +1239,9 @@ public:
     template <typename Op>
     ANKERL_NANOBENCH_NO_SANITIZE("integer")
     Bench& run(Op&& op) {
-        assert(mBench.epochIterations() == 1 &&
-               "setup() runs once per epoch, not once per iteration; use epochIterations(1) when setup() must reset state for each timed call");
+        assert(mBench.epochIterations() == 0 &&
+               "setup() is not compatible with setting epochIterations since it runs once per epoch, not once per iteration;");
+        mBench.epochIterations(1);
         return mBench.runImpl(mSetupOp, std::forward<Op>(op));
     }
 

@@ -22,7 +22,7 @@ static void FindByte(benchmark::Bench& bench)
     file.seek(0, SEEK_SET);
     BufferedFile bf{file, /*nBufSize=*/file_size + 1, /*nRewindIn=*/file_size};
 
-    bench.epochIterations(1)
+    bench
         .setup([&] { bf.SetPos(0); })
         .run([&] { bf.FindByte(std::byte(1)); });
 
