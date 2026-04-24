@@ -364,17 +364,18 @@ size_t CountPSBTUnsignedInputs(const PartiallySignedTransaction& psbt) {
 
 void UpdatePSBTOutput(const SigningProvider& provider, PartiallySignedTransaction& psbt, int index)
 {
-    CMutableTransaction& tx = *Assert(psbt.tx);
-    const CTxOut& out = tx.vout.at(index);
+    // Dummy transaction for a would-be-spend of this output, to update sigdata with.
+    CMutableTransaction tx;
+    tx.vin.emplace_back();
+    tx.vout.emplace_back();
+
+    const CTxOut& out = psbt.tx->vout.at(index);
     PSBTOutput& psbt_out = psbt.outputs.at(index);
 
     // Fill a SignatureData with output info
     SignatureData sigdata;
     psbt_out.FillSignatureData(sigdata);
 
-    // Construct a would-be spend of this output, to update sigdata with.
-    // Note that ProduceSignature is used to fill in metadata (not actual signatures),
-    // so provider does not need to provide any private keys (it can be a HidingSigningProvider).
     MutableTransactionSignatureCreator creator(tx, /*input_idx=*/0, out.nValue, SIGHASH_ALL);
     ProduceSignature(provider, creator, out.scriptPubKey, sigdata);
 
