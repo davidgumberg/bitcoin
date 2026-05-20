@@ -189,7 +189,7 @@ def parse_gpg_result(
 
         elif line_begins_with(r"REVKEYSIG(?:\s|$)", line):
             curr_sigdata.key, curr_sigdata.name = line.split(maxsplit=3)[2:4]
-            curr_sigs = good_sigs
+            curr_sigs = bad_sigs
             curr_sigdata.status = "revoked"
 
         elif line_begins_with(r"BADSIG(?:\s|$)", line):
