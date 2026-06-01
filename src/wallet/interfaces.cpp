@@ -23,6 +23,7 @@
 #include <wallet/context.h>
 #include <wallet/feebumper.h>
 #include <wallet/fees.h>
+#include <wallet/hd_keys.h>
 #include <wallet/load.h>
 #include <wallet/receive.h>
 #include <wallet/rpc/wallet.h>
@@ -30,6 +31,7 @@
 #include <wallet/wallet.h>
 
 #include <memory>
+#include <optional>
 #include <string>
 #include <utility>
 #include <vector>
@@ -164,6 +166,14 @@ public:
             return provider->GetPubKey(address, pub_key);
         }
         return false;
+    }
+    util::Expected<wallet::Fingerprint, wallet::AddHDKeyError> addHDKey() override
+    {
+        auto res = wallet::AddHDKey(*m_wallet, std::nullopt);
+        if (!res) {
+            return util::Unexpected{res.error()};
+        }
+        return res->fingerprint;
     }
     SigningResult signMessage(const std::string& message, const PKHash& pkhash, std::string& str_sig) override
     {
