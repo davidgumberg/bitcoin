@@ -9,6 +9,8 @@ import shutil
 from test_framework.blocktools import COINBASE_MATURITY
 from test_framework.descriptors import descsum_create
 from test_framework.test_framework import BitcoinTestFramework
+from test_framework.address import base58_to_byte
+from test_framework.script import hash160
 from test_framework.util import (
     assert_equal,
     wallet_importprivkey,
@@ -50,6 +52,11 @@ class WalletHDTest(BitcoinTestFramework):
 
         assert_raises_rpc_error(-5, "Extended public key (xpub) provided, but extended private key (xprv) is required", wallet.addhdkey, imp_xpub)
         add_res = wallet.addhdkey(imp_xprv)
+        payload, _ = base58_to_byte(add_res["xpub"])
+        master_pubkey = payload[-33:]
+        expected_fingerprint = hash160(master_pubkey)[:4].hex()
+        assert_equal(add_res["fingerprint"], expected_fingerprint)
+        assert_equal(len(add_res["fingerprint"]), 8)
         expected_unused_desc = descsum_create(f"unused({imp_xpub})")
         assert_equal(add_res["xpub"], imp_xpub)
         xpub_info = wallet.gethdkeys()

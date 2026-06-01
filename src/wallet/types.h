@@ -16,6 +16,8 @@
 
 #include <policy/fees/block_policy_estimator.h>
 
+#include <array>
+
 namespace wallet {
 /**
  * Address purpose field that has been been stored with wallet sending and
@@ -41,6 +43,8 @@ struct CreatedTransactionResult
     CreatedTransactionResult(CTransactionRef _tx, CAmount _fee, std::optional<unsigned int> _change_pos, const FeeCalculation& _fee_calc)
             : tx(_tx), fee(_fee), fee_calc(_fee_calc), change_pos(_change_pos) {}
 };
+
+using Fingerprint = std::array<unsigned char, 4>;
 
 } // namespace wallet
 
