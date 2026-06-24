@@ -853,7 +853,8 @@ RPCMethod addhdkey()
         RPCResult{
             RPCResult::Type::OBJ, "", "",
             {
-                {RPCResult::Type::STR, "xpub", "The xpub of the HD key that was added to the wallet"}
+                {RPCResult::Type::STR, "xpub", "The xpub of the HD key that was added to the wallet"},
+                {RPCResult::Type::STR_HEX, "fingerprint", "Fingerprint of the HD key that was added"},
             },
         },
         RPCExamples{
@@ -911,7 +912,9 @@ RPCMethod addhdkey()
             desc_spkm.GetWalletDescriptor().descriptor->GetPubKeys(pubkeys, extpubs);
             CHECK_NONFATAL(pubkeys.size() == 0);
             CHECK_NONFATAL(extpubs.size() == 1);
-            response.pushKV("xpub", EncodeExtPubKey(*extpubs.begin()));
+            const auto& extpub = *extpubs.begin();
+            response.pushKV("xpub", EncodeExtPubKey(extpub));
+            response.pushKV("fingerprint", HexStr(extpub.id_key_fingerprint()));
 
             return response;
         },
