@@ -15,6 +15,7 @@
 #include <univalue.h>
 #include <util/translation.h>
 #include <wallet/context.h>
+#include <wallet/hd_keys.h>
 #include <wallet/receive.h>
 #include <wallet/rpc/util.h>
 #include <wallet/wallet.h>
@@ -865,19 +866,12 @@ RPCMethod addhdkey()
             std::shared_ptr<CWallet> const wallet = GetWalletForJSONRPCRequest(request);
             if (!wallet) return UniValue::VNULL;
 
-            if (wallet->IsWalletFlagSet(WALLET_FLAG_DISABLE_PRIVATE_KEYS)) {
-                throw JSONRPCError(RPC_WALLET_ERROR, "addhdkey is not available for wallets without private keys");
-            }
+            std::optional<CExtKey> existing_key;
 
-            EnsureWalletIsUnlocked(*wallet);
+            if (!request.params[0].isNull()) {
+                existing_key = DecodeExtKey(request.params[0].get_str());
 
-            CExtKey hdkey;
-            if (request.params[0].isNull()) {
-                CKey seed_key = GenerateRandomKey();
-                hdkey.SetSeed(seed_key);
-            } else {
-                hdkey = DecodeExtKey(request.params[0].get_str());
-                if (!hdkey.key.IsValid()) {
+                if (!existing_key->key.IsValid()) {
                     // Check if the user gave us an xpub and give a more descriptive error if so
                     CExtPubKey xpub = DecodeExtPubKey(request.params[0].get_str());
                     if (xpub.pubkey.IsValid()) {
@@ -888,34 +882,17 @@ RPCMethod addhdkey()
                 }
             }
 
-            LOCK(wallet->cs_wallet);
-            std::string desc_str = "unused(" + EncodeExtKey(hdkey) + ")";
-            FlatSigningProvider keys;
-            std::string error;
-            std::vector<std::unique_ptr<Descriptor>> descs = Parse(desc_str, keys, error, false);
-            CHECK_NONFATAL(!descs.empty());
-            WalletDescriptor w_desc(std::move(descs.at(0)), GetTime(), 0, 0, 0);
-            if (wallet->GetDescriptorScriptPubKeyMan(w_desc) != nullptr) {
-                throw JSONRPCError(RPC_WALLET_ERROR, "HD key already exists");
-            }
-
-            auto spkm = wallet->AddWalletDescriptor(w_desc, keys, /*label=*/"", /*internal=*/false);
-            if (!spkm) {
-                throw JSONRPCError(RPC_WALLET_ERROR, util::ErrorString(spkm).original);
+            auto res = wallet::AddHDKey(*wallet, existing_key);
+            if (!res) {
+                if (res.error().code == wallet::AddHDKeyErrorCode::WALLET_LOCKED) {
+                    throw JSONRPCError(RPC_WALLET_UNLOCK_NEEDED, res.error().message.original);
+                }
+                throw JSONRPCError(RPC_WALLET_ERROR, res.error().message.original);
             }
 
             UniValue response(UniValue::VOBJ);
-            const DescriptorScriptPubKeyMan& desc_spkm = spkm->get();
-            LOCK(desc_spkm.cs_desc_man);
-            std::set<CPubKey> pubkeys;
-            std::set<CExtPubKey> extpubs;
-            desc_spkm.GetWalletDescriptor().descriptor->GetPubKeys(pubkeys, extpubs);
-            CHECK_NONFATAL(pubkeys.size() == 0);
-            CHECK_NONFATAL(extpubs.size() == 1);
-            const auto& extpub = *extpubs.begin();
-            response.pushKV("xpub", EncodeExtPubKey(extpub));
-            response.pushKV("fingerprint", HexStr(extpub.id_key_fingerprint()));
-
+            response.pushKV("xpub", res->xpub);
+            response.pushKV("fingerprint", HexStr(res->fingerprint));
             return response;
         },
     };
