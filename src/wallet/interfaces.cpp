@@ -10,6 +10,7 @@
 #include <interfaces/handler.h>
 #include <node/types.h>
 #include <policy/fees/block_policy_estimator.h>
+#include <pubkey.h>
 #include <primitives/transaction.h>
 #include <rpc/server.h>
 #include <scheduler.h>
@@ -23,6 +24,7 @@
 #include <wallet/context.h>
 #include <wallet/feebumper.h>
 #include <wallet/fees.h>
+#include <wallet/hd_keys.h>
 #include <wallet/load.h>
 #include <wallet/receive.h>
 #include <wallet/rpc/wallet.h>
@@ -30,6 +32,7 @@
 #include <wallet/wallet.h>
 
 #include <memory>
+#include <optional>
 #include <string>
 #include <utility>
 #include <vector>
@@ -164,6 +167,14 @@ public:
             return provider->GetPubKey(address, pub_key);
         }
         return false;
+    }
+    util::Expected<KeyFingerprint, wallet::AddHDKeyError> addHDKey() override
+    {
+        auto res = wallet::AddHDKey(*m_wallet, std::nullopt);
+        if (!res) {
+            return util::Unexpected{res.error()};
+        }
+        return res->fingerprint;
     }
     SigningResult signMessage(const std::string& message, const PKHash& pkhash, std::string& str_sig) override
     {

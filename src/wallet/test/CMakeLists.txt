@@ -13,6 +13,7 @@ target_sources(test_bitcoin
     coinselection_tests.cpp
     feebumper_tests.cpp
     group_outputs_tests.cpp
+    hd_keys_tests.cpp
     init_tests.cpp
     ismine_tests.cpp
     psbt_wallet_tests.cpp

@@ -74,11 +74,10 @@ util::Expected<AddHDKeyResult, AddHDKeyError> AddHDKey(CWallet &wallet, const st
     CHECK_NONFATAL(pubkeys.empty());
     CHECK_NONFATAL(extpubs.size() == 1);
 
-    KeyFingerprint fingerprint;
-    std::copy_n(hdkey.key.GetPubKey().GetID().begin(), 4, fingerprint.begin());
+    const auto& extpub = *extpubs.begin();
     return AddHDKeyResult{
-        fingerprint,
-        EncodeExtPubKey(*extpubs.begin()),
+        extpub.id_key_fingerprint(),
+        EncodeExtPubKey(extpub),
     };
 }
 
