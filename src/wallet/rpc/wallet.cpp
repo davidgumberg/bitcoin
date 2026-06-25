@@ -936,7 +936,6 @@ RPCMethod walletdisplayaddress();
 
 // backup
 RPCMethod importprunedfunds();
-RPCMethod removeprunedfunds();
 RPCMethod importdescriptors();
 RPCMethod listdescriptors();
 RPCMethod backupwallet();
@@ -1024,7 +1023,6 @@ std::span<const CRPCCommand> GetWalletRPCCommands()
         {"wallet", &loadwallet},
         {"wallet", &lockunspent},
         {"wallet", &migratewallet},
-        {"wallet", &removeprunedfunds},
         {"wallet", &rescanblockchain},
         {"wallet", &send},
         {"wallet", &sendmany},
