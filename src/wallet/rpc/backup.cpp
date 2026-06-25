@@ -91,39 +91,6 @@ RPCMethod importprunedfunds()
     };
 }
 
-RPCMethod removeprunedfunds()
-{
-    return RPCMethod{
-        "removeprunedfunds",
-        "Deletes the specified transaction from the wallet. Meant for use with pruned wallets and as a companion to importprunedfunds. This will affect wallet balances.\n",
-                {
-                    {"txid", RPCArg::Type::STR_HEX, RPCArg::Optional::NO, "The hex-encoded id of the transaction you are deleting"},
-                },
-                RPCResult{RPCResult::Type::NONE, "", ""},
-                RPCExamples{
-                    HelpExampleCli("removeprunedfunds", "\"a8d0c0184dde994a09ec054286f1ce581bebf46446a512166eae7628734ea0a5\"") +
-            "\nAs a JSON-RPC call\n"
-            + HelpExampleRpc("removeprunedfunds", "\"a8d0c0184dde994a09ec054286f1ce581bebf46446a512166eae7628734ea0a5\"")
-                },
-        [](const RPCMethod& self, const JSONRPCRequest& request) -> UniValue
-{
-    std::shared_ptr<CWallet> const pwallet = GetWalletForJSONRPCRequest(request);
-    if (!pwallet) return UniValue::VNULL;
-
-    LOCK(pwallet->cs_wallet);
-
-    Txid hash{Txid::FromUint256(ParseHashV(request.params[0], "txid"))};
-    std::vector<Txid> vHash;
-    vHash.push_back(hash);
-    if (auto res = pwallet->RemoveTxs(vHash); !res) {
-        throw JSONRPCError(RPC_WALLET_ERROR, util::ErrorString(res).original);
-    }
-
-    return UniValue::VNULL;
-},
-    };
-}
-
 static int64_t GetImportTimestamp(const UniValue& data, int64_t now)
 {
     if (data.exists("timestamp")) {
