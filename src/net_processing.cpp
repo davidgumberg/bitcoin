@@ -6549,7 +6549,15 @@ bool PeerManagerImpl::SendMessages(CNode& node)
         //
         std::vector<CInv> vGetData;
         const bool can_request_blocks_from_peer{current_time >= state.m_block_download_paused_until};
-        if (CanServeBlocks(peer) && can_request_blocks_from_peer && ((sync_blocks_and_headers_from_peer && !IsLimitedPeer(peer)) || !m_chainman.IsInitialBlockDownload()) && state.vBlocksInFlight.size() < MAX_BLOCKS_IN_TRANSIT_PER_PEER) {
+        if (
+            CanServeBlocks(peer)
+            && can_request_blocks_from_peer
+            && (
+                (sync_blocks_and_headers_from_peer && !IsLimitedPeer(peer))
+                || (!m_chainman.IsInitialBlockDownload() && node.IsManualConn())
+            )
+            && state.vBlocksInFlight.size() < MAX_BLOCKS_IN_TRANSIT_PER_PEER
+        ) {
             std::vector<const CBlockIndex*> vToDownload;
             NodeId staller = -1;
             auto get_inflight_budget = [&state]() {
