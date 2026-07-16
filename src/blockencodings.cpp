@@ -150,7 +150,6 @@ ReadStatus PartiallyDownloadedBlock::InitData(const CBlockHeaderAndShortTxIDs& c
             if (tx_source[idit->second] == TxSource::NONE) {
                 txn_available[idit->second] = extra_txn[i].second;
                 tx_source[idit->second] = TxSource::EXTRA;
-                mempool_count++;
                 extra_count++;
             } else if (tx_source[idit->second] != TxSource::CONFLICTED &&
                        txn_available[idit->second]->GetWitnessHash() != extra_txn[i].second->GetWitnessHash()) {
@@ -161,15 +160,18 @@ ReadStatus PartiallyDownloadedBlock::InitData(const CBlockHeaderAndShortTxIDs& c
                 // Note that we don't want duplication between extra_txn and mempool to
                 // trigger this case, so we compare witness hashes first
                 txn_available[idit->second].reset();
-                mempool_count--;
-                if (tx_source[idit->second] == TxSource::EXTRA) extra_count--;
+                if (tx_source[idit->second] == TxSource::EXTRA) {
+                    extra_count--;
+                } else if (tx_source[idit->second] == TxSource::MEMPOOL) {
+                    mempool_count--;
+                }
                 tx_source[idit->second] = TxSource::CONFLICTED;
             }
         }
         // Though ideally we'd continue scanning for the two-txn-match-shortid case,
         // the performance win of an early exit here is too good to pass up and worth
         // the extra risk.
-        if (mempool_count == shorttxids.size())
+        if (mempool_count + extra_count == shorttxids.size())
             break;
     }
 
@@ -223,7 +225,7 @@ ReadStatus PartiallyDownloadedBlock::FillBlock(CBlock& block, const std::vector<
         const uint256 hash{block.GetHash()};
         uint32_t tx_missing_size{0};
         for (const auto& tx : vtx_missing) tx_missing_size += tx->ComputeTotalSize();
-        LogDebug(BCLog::CMPCTBLOCK, "Successfully reconstructed block %s with %u txn prefilled, %u txn from mempool (incl at least %u from extra pool) and %u txn (%u bytes) requested\n", hash.ToString(), prefilled_count, mempool_count, extra_count, vtx_missing.size(), tx_missing_size);
+        LogDebug(BCLog::CMPCTBLOCK, "Successfully reconstructed block %s with %u txn prefilled, %u txn from mempool,  %u from extra pool, and %u txn (%u bytes) requested\n", hash.ToString(), prefilled_count, mempool_count, extra_count, vtx_missing.size(), tx_missing_size);
         if (vtx_missing.size() < 5) {
             for (const auto& tx : vtx_missing) {
                 LogDebug(BCLog::CMPCTBLOCK, "Reconstructed block %s required tx %s\n", hash.ToString(), tx->GetHash().ToString());
