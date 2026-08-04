@@ -338,7 +338,9 @@ namespace BCLog {
         std::string ret;
         for (char ch_in : str) {
             uint8_t ch = (uint8_t)ch_in;
-            if ((ch >= 32 || ch == '\n') && ch != '\x7f') {
+            if (ch == '\n') {
+                continue;
+            } else if (ch >= 32 && ch < 127) {
                 ret += ch_in;
             } else {
                 ret += strprintf("\\x%02x", ch);
@@ -427,7 +429,7 @@ std::string BCLog::Logger::Format(const util::log::Entry& entry) const
     result += GetLogPrefix(static_cast<LogFlags>(entry.category), entry.level);
     result += LogEscapeMessage(entry.message);
 
-    if (!result.ends_with('\n')) result += '\n';
+    result += '\n';
     return result;
 }
 
