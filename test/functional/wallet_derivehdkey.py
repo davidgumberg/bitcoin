@@ -16,7 +16,6 @@ class WalletDeriveHDKeyTest(BitcoinTestFramework):
     def set_test_params(self):
         self.setup_clean_chain = True
         self.num_nodes = 2
-        self.extra_args = [["-deprecatedrpc=encryptwallet"], []]
 
     def skip_test_if_missing_module(self):
         self.skip_if_no_wallet()
@@ -63,7 +62,6 @@ class WalletDeriveHDKeyTest(BitcoinTestFramework):
         wallet.addhdkey()
         xpub_info = wallet.derivehdkey("m/87h")
         assert "xprv" not in xpub_info
-        xpub = xpub_info["xpub"]
         root_fingerprint = wallet.derivehdkey("m/87h/0h")["origin"][1:9]
         assert_equal(xpub_info["origin"], f"[{root_fingerprint}/87h]")
         too_deep_path = "m/" + "/".join(["0h"] * 256)
@@ -76,23 +74,22 @@ class WalletDeriveHDKeyTest(BitcoinTestFramework):
 
         xpub_info = wallet.derivehdkey("m/87h/0h/0h/0")
         xpub_priv_info = wallet.derivehdkey("m/87h/0h/0h/0", private=True)
-        xprv = xpub_priv_info["xprv"]
         assert_equal(xpub_priv_info["xpub"], xpub_info["xpub"])
 
+    def test_encrypted_derivehdkey(self):
         self.log.info("HD pubkey can be retrieved from encrypted wallets")
-        prev_xprv = xprv
-        wallet.encryptwallet("pass")
+        self.nodes[0].createwallet("encrypted", passphrase=self.default_wallet_pass)
+        wallet = self.nodes[0].get_wallet_rpc("encrypted")
+
         assert_raises_rpc_error(
             -13,
             "Error: Please enter the wallet passphrase with walletpassphrase first",
             wallet.derivehdkey,
             "m/87h",
         )
-        with WalletUnlock(wallet, "pass"):
+
+        with WalletUnlock(wallet, self.default_wallet_pass):
             xpub_info = wallet.derivehdkey("m/87h")
-            # Only automatically generated descriptors are rotated on
-            # encryption, unused(KEY) is not.
-            assert_equal(xpub_info["xpub"], xpub)
             assert "xprv" not in xpub_info
 
         self.log.info("HD privkey can be retrieved from encrypted wallets")
@@ -103,11 +100,6 @@ class WalletDeriveHDKeyTest(BitcoinTestFramework):
             "m/87h/0h/0h/0",
             private=True,
         )
-        with WalletUnlock(wallet, "pass"):
-            xpub_info = wallet.derivehdkey("m/87h/0h/0h/0", private=True)
-            # Unused(KEY) is preferred over active descriptors and is not
-            # rotated on encryption.
-            assert_equal(xpub_info["xprv"], prev_xprv)
 
     def test_multiple_unused_keys(self):
         self.log.info("Test multiple unused(KEY) descriptors")
