@@ -322,12 +322,6 @@ WalletModel::EncryptionStatus WalletModel::getEncryptionStatus() const
         return Unlocked;
     }
 }
-
-bool WalletModel::setWalletEncrypted(const SecureString& passphrase)
-{
-    return m_wallet->encryptWallet(passphrase);
-}
-
 util::Expected<void, wallet::WalletError> WalletModel::changePassphrase(const SecureString& oldPass, const SecureString& newPass)
 {
     m_wallet->lock(); // Make sure wallet is locked before attempting pass change

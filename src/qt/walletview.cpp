@@ -200,14 +200,6 @@ void WalletView::showOutOfSyncWarning(bool fShow)
     overviewPage->showOutOfSyncWarning(fShow);
 }
 
-void WalletView::encryptWallet()
-{
-    auto dlg = new AskPassphraseDialog(AskPassphraseDialog::Encrypt, this);
-    dlg->setModel(walletModel);
-    connect(dlg, &QDialog::finished, this, &WalletView::encryptionStatusChanged);
-    GUIUtil::ShowModalDialogAsynchronously(dlg);
-}
-
 void WalletView::backupWallet()
 {
     QString filename = GUIUtil::getSaveFileName(this,

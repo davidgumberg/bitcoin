@@ -141,10 +141,6 @@ class WalletImpl : public Wallet
 public:
     explicit WalletImpl(WalletContext& context, const std::shared_ptr<CWallet>& wallet) : m_context(context), m_wallet(wallet) {}
 
-    bool encryptWallet(const SecureString& wallet_passphrase) override
-    {
-        return m_wallet->EncryptWallet(wallet_passphrase);
-    }
     bool isCrypted() override { return m_wallet->HasEncryptionKeys(); }
     bool lock() override { return m_wallet->Lock(); }
     util::Expected<void, WalletError> unlock(const SecureString& wallet_passphrase) override { return m_wallet->Unlock(wallet_passphrase); }

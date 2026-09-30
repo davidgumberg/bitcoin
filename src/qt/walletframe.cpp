@@ -234,13 +234,6 @@ void WalletFrame::gotoLoadPSBT(bool from_clipboard)
     GUIUtil::ShowModalDialogAsynchronously(dlg);
 }
 
-void WalletFrame::encryptWallet()
-{
-    WalletView *walletView = currentWalletView();
-    if (walletView)
-        walletView->encryptWallet();
-}
-
 void WalletFrame::backupWallet()
 {
     WalletView *walletView = currentWalletView();

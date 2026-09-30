@@ -66,9 +66,6 @@ class Wallet
 public:
     virtual ~Wallet() = default;
 
-    //! Encrypt wallet.
-    virtual bool encryptWallet(const SecureString& wallet_passphrase) = 0;
-
     //! Return whether wallet is encrypted.
     virtual bool isCrypted() = 0;
 

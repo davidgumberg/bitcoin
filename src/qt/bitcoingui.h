@@ -147,7 +147,6 @@ private:
     QAction* aboutAction = nullptr;
     QAction* receiveCoinsAction = nullptr;
     QAction* optionsAction = nullptr;
-    QAction* encryptWalletAction = nullptr;
     QAction* backupWalletAction = nullptr;
     QAction* changePassphraseAction = nullptr;
     QAction* aboutQtAction = nullptr;

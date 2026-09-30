@@ -116,37 +116,19 @@ void AskPassphraseDialog::accept()
             {
                 QString encryption_reminder = tr("Remember that encrypting your wallet cannot fully protect "
                 "your bitcoins from being stolen by malware infecting your computer.");
-                if (m_passphrase_out) {
-                    m_passphrase_out->assign(newpass1);
-                    QMessageBox msgBoxWarning(QMessageBox::Warning,
-                                              tr("Wallet to be encrypted"),
-                                              "<qt>" +
-                                                  tr("Your wallet is about to be encrypted. ") + encryption_reminder + " " +
-                                                  tr("Are you sure you wish to encrypt your wallet?") +
-                                                  "</b></qt>",
-                                              QMessageBox::Cancel | QMessageBox::Yes, this);
-                    msgBoxWarning.setDefaultButton(QMessageBox::Cancel);
-                    QMessageBox::StandardButton retval = (QMessageBox::StandardButton)msgBoxWarning.exec();
-                    if (retval == QMessageBox::Cancel) {
-                        QDialog::reject();
-                        return;
-                    }
-                } else {
-                    assert(model != nullptr);
-                    if (model->setWalletEncrypted(newpass1)) {
-                        QMessageBox::warning(this, tr("Wallet encrypted"),
-                                             "<qt>" +
-                                             tr("Your wallet is now encrypted. ") + encryption_reminder +
-                                             "<br><br><b>" +
-                                             tr("IMPORTANT: Any previous backups you have made of your wallet file "
-                                             "should be replaced with the newly generated, encrypted wallet file. "
-                                             "For security reasons, previous backups of the unencrypted wallet file "
-                                             "will become useless as soon as you start using the new, encrypted wallet.") +
-                                             "</b></qt>");
-                    } else {
-                        QMessageBox::critical(this, tr("Wallet encryption failed"),
-                                             tr("Wallet encryption failed due to an internal error. Your wallet was not encrypted."));
-                    }
+                Assume(m_passphrase_out)->assign(newpass1);
+                QMessageBox msgBoxWarning(QMessageBox::Warning,
+                                          tr("Wallet to be encrypted"),
+                                          "<qt>" +
+                                              tr("Your wallet is about to be encrypted. ") + encryption_reminder + " " +
+                                              tr("Are you sure you wish to encrypt your wallet?") +
+                                              "</b></qt>",
+                                          QMessageBox::Cancel | QMessageBox::Yes, this);
+                msgBoxWarning.setDefaultButton(QMessageBox::Cancel);
+                QMessageBox::StandardButton retval = (QMessageBox::StandardButton)msgBoxWarning.exec();
+                if (retval == QMessageBox::Cancel) {
+                    QDialog::reject();
+                    return;
                 }
                 QDialog::accept(); // Success
             }
