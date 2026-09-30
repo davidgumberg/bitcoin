@@ -19,129 +19,126 @@ from test_framework.wallet_util import WalletUnlock
 class KeyPoolTest(BitcoinTestFramework):
     def set_test_params(self):
         self.num_nodes = 1
-        self.extra_args = [["-deprecatedrpc=encryptwallet"]]
 
     def skip_test_if_missing_module(self):
         self.skip_if_no_wallet()
 
     def run_test(self):
         nodes = self.nodes
-        addr_before_encrypting = nodes[0].getnewaddress()
-        addr_before_encrypting_data = nodes[0].getaddressinfo(addr_before_encrypting)
+        nodes[0].createwallet("encrypted", passphrase=self.default_wallet_pass)
+        wallet = nodes[0].get_wallet_rpc("encrypted")
+        nodes[0].get_wallet_rpc(self.default_wallet_name).sendtoaddress(wallet.getnewaddress(), 10)
+        self.generate(nodes[0], 1)
 
-        # Encrypt wallet and wait to terminate
-        nodes[0].encryptwallet('test')
         # Import hardened derivation only descriptors
-        nodes[0].walletpassphrase('test', 10)
-        nodes[0].importdescriptors([
-            {
-                "desc": descsum_create(f"wpkh({ExtendedPrivateKey.generate().to_string()}/0h/*h)"),
-                "timestamp": "now",
-                "range": [0,0],
-                "active": True
-            },
-            {
-                "desc": descsum_create(f"pkh({ExtendedPrivateKey.generate().to_string()}/1h/*h)"),
-                "timestamp": "now",
-                "range": [0,0],
-                "active": True
-            },
-            {
-                "desc": descsum_create(f"sh(wpkh({ExtendedPrivateKey.generate().to_string()}/2h/*h))"),
-                "timestamp": "now",
-                "range": [0,0],
-                "active": True
-            },
-            {
-                "desc": descsum_create(f"wpkh({ExtendedPrivateKey.generate().to_string()}/3h/*h)"),
-                "timestamp": "now",
-                "range": [0,0],
-                "active": True,
-                "internal": True
-            },
-            {
-                "desc": descsum_create(f"pkh({ExtendedPrivateKey.generate().to_string()}/4h/*h)"),
-                "timestamp": "now",
-                "range": [0,0],
-                "active": True,
-                "internal": True
-            },
-            {
-                "desc": descsum_create(f"sh(wpkh({ExtendedPrivateKey.generate().to_string()}/5h/*h))"),
-                "timestamp": "now",
-                "range": [0,0],
-                "active": True,
-                "internal": True
-            }
-        ])
-        nodes[0].walletlock()
+        with WalletUnlock(wallet, self.default_wallet_pass):
+            wallet.importdescriptors([
+                {
+                    "desc": descsum_create(f"wpkh({ExtendedPrivateKey.generate().to_string()}/0h/*h)"),
+                    "timestamp": "now",
+                    "range": [0,0],
+                    "active": True
+                },
+                {
+                    "desc": descsum_create(f"pkh({ExtendedPrivateKey.generate().to_string()}/1h/*h)"),
+                    "timestamp": "now",
+                    "range": [0,0],
+                    "active": True
+                },
+                {
+                    "desc": descsum_create(f"sh(wpkh({ExtendedPrivateKey.generate().to_string()}/2h/*h))"),
+                    "timestamp": "now",
+                    "range": [0,0],
+                    "active": True
+                },
+                {
+                    "desc": descsum_create(f"wpkh({ExtendedPrivateKey.generate().to_string()}/3h/*h)"),
+                    "timestamp": "now",
+                    "range": [0,0],
+                    "active": True,
+                    "internal": True
+                },
+                {
+                    "desc": descsum_create(f"pkh({ExtendedPrivateKey.generate().to_string()}/4h/*h)"),
+                    "timestamp": "now",
+                    "range": [0,0],
+                    "active": True,
+                    "internal": True
+                },
+                {
+                    "desc": descsum_create(f"sh(wpkh({ExtendedPrivateKey.generate().to_string()}/5h/*h))"),
+                    "timestamp": "now",
+                    "range": [0,0],
+                    "active": True,
+                    "internal": True
+                }
+            ])
         # Keep creating keys
-        addr = nodes[0].getnewaddress()
-        addr_data = nodes[0].getaddressinfo(addr)
-        assert_not_equal(addr_before_encrypting_data['hdmasterfingerprint'], addr_data['hdmasterfingerprint'])
-        assert_raises_rpc_error(-12, "Error: Keypool ran out, please call keypoolrefill first", nodes[0].getnewaddress)
+        addr = wallet.getnewaddress()
+        addr_data = wallet.getaddressinfo(addr)
+        assert_raises_rpc_error(-12, "Error: Keypool ran out, please call keypoolrefill first", wallet.getnewaddress)
 
         # put six (plus 2) new keys in the keypool (100% external-, +100% internal-keys, 1 in min)
-        with WalletUnlock(nodes[0], 'test'):
-            nodes[0].keypoolrefill(6)
-        wi = nodes[0].getwalletinfo()
+        with WalletUnlock(wallet, self.default_wallet_pass):
+            wallet.keypoolrefill(6)
+        wi = wallet.getwalletinfo()
         assert_equal(wi['keypoolsize_hd_internal'], 24)
         assert_equal(wi['keypoolsize'], 24)
 
         # drain the internal keys
-        nodes[0].getrawchangeaddress()
-        nodes[0].getrawchangeaddress()
-        nodes[0].getrawchangeaddress()
-        nodes[0].getrawchangeaddress()
-        nodes[0].getrawchangeaddress()
-        nodes[0].getrawchangeaddress()
+        wallet.getrawchangeaddress()
+        wallet.getrawchangeaddress()
+        wallet.getrawchangeaddress()
+        wallet.getrawchangeaddress()
+        wallet.getrawchangeaddress()
+        wallet.getrawchangeaddress()
         # remember keypool sizes
-        wi = nodes[0].getwalletinfo()
+        wi = wallet.getwalletinfo()
         kp_size_before = [wi['keypoolsize_hd_internal'], wi['keypoolsize']]
         # the next one should fail
-        assert_raises_rpc_error(-12, "Keypool ran out", nodes[0].getrawchangeaddress)
+        assert_raises_rpc_error(-12, "Keypool ran out", wallet.getrawchangeaddress)
         # check that keypool sizes did not change
-        wi = nodes[0].getwalletinfo()
+        wi = wallet.getwalletinfo()
         kp_size_after = [wi['keypoolsize_hd_internal'], wi['keypoolsize']]
         assert_equal(kp_size_before, kp_size_after)
 
         # drain the external keys
         addr = set()
-        addr.add(nodes[0].getnewaddress(address_type="bech32"))
-        addr.add(nodes[0].getnewaddress(address_type="bech32"))
-        addr.add(nodes[0].getnewaddress(address_type="bech32"))
-        addr.add(nodes[0].getnewaddress(address_type="bech32"))
-        addr.add(nodes[0].getnewaddress(address_type="bech32"))
-        addr.add(nodes[0].getnewaddress(address_type="bech32"))
+        addr.add(wallet.getnewaddress(address_type="bech32"))
+        addr.add(wallet.getnewaddress(address_type="bech32"))
+        addr.add(wallet.getnewaddress(address_type="bech32"))
+        addr.add(wallet.getnewaddress(address_type="bech32"))
+        addr.add(wallet.getnewaddress(address_type="bech32"))
+        addr.add(wallet.getnewaddress(address_type="bech32"))
         assert_equal(len(addr), 6)
         # remember keypool sizes
-        wi = nodes[0].getwalletinfo()
+        wi = wallet.getwalletinfo()
         kp_size_before = [wi['keypoolsize_hd_internal'], wi['keypoolsize']]
         # the next one should fail
-        assert_raises_rpc_error(-12, "Error: Keypool ran out, please call keypoolrefill first", nodes[0].getnewaddress)
+        assert_raises_rpc_error(-12, "Error: Keypool ran out, please call keypoolrefill first", wallet.getnewaddress)
         # check that keypool sizes did not change
-        wi = nodes[0].getwalletinfo()
+        wi = wallet.getwalletinfo()
         kp_size_after = [wi['keypoolsize_hd_internal'], wi['keypoolsize']]
         assert_equal(kp_size_before, kp_size_after)
 
         # refill keypool with three new addresses
-        nodes[0].walletpassphrase('test', 1)
-        nodes[0].keypoolrefill(3)
+        wallet.walletpassphrase(self.default_wallet_pass, 1)
+        wallet.keypoolrefill(3)
 
         # test walletpassphrase timeout
         # CScheduler relies on condition_variable::wait_until() which does not
         # guarantee accurate timing. We'll wait up to 5 seconds to execute a 1
         # second scheduled event.
-        nodes[0].wait_until(lambda: nodes[0].getwalletinfo()["unlocked_until"] == 0, timeout=5)
+        nodes[0].wait_until(lambda: wallet.getwalletinfo()["unlocked_until"] == 0, timeout=5)
 
         # drain the keypool
         for _ in range(3):
-            nodes[0].getnewaddress()
-        assert_raises_rpc_error(-12, "Keypool ran out", nodes[0].getnewaddress)
+            wallet.getnewaddress()
+        assert_raises_rpc_error(-12, "Keypool ran out", wallet.getnewaddress)
 
-        with WalletUnlock(nodes[0], 'test'):
-            nodes[0].keypoolrefill(100)
-            wi = nodes[0].getwalletinfo()
+        with WalletUnlock(wallet, self.default_wallet_pass):
+            wallet.keypoolrefill(100)
+            wi = wallet.getwalletinfo()
             assert_equal(wi['keypoolsize_hd_internal'], 400)
             assert_equal(wi['keypoolsize'], 400)
 
@@ -150,7 +147,7 @@ class KeyPoolTest(BitcoinTestFramework):
         w2 = nodes[0].get_wallet_rpc('w2')
 
         # refer to initial wallet as w1
-        w1 = nodes[0].get_wallet_rpc(self.default_wallet_name)
+        w1 = wallet
 
         # import private key and fund it
         address = addr.pop()
@@ -158,9 +155,9 @@ class KeyPoolTest(BitcoinTestFramework):
         res = w2.importdescriptors([{'desc': desc, 'timestamp': 'now'}])
         assert_equal(res[0]['success'], True)
 
-        with WalletUnlock(w1, 'test'):
+        with WalletUnlock(w1, self.default_wallet_pass):
             res = w1.sendtoaddress(address=address, amount=0.00010000)
-        self.generate(nodes[0], 1)
+        self.generatetoaddress(nodes[0], 1, w1.getnewaddress())
         destination = addr.pop()
 
         # Using a fee rate (10 sat / byte) well above the minimum relay rate
