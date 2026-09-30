@@ -28,7 +28,7 @@ class WalletDescriptorTest(BitcoinTestFramework):
     def set_test_params(self):
         self.setup_clean_chain = True
         self.num_nodes = 1
-        self.extra_args = [['-keypool=100', '-deprecatedrpc=encryptwallet']]
+        self.extra_args = [['-keypool=100']]
 
     def skip_test_if_missing_module(self):
         self.skip_if_no_wallet()
@@ -81,6 +81,39 @@ class WalletDescriptorTest(BitcoinTestFramework):
         assert_equal(tx["details"][0]["parent_descs"], [parent_desc])
 
         wallet.unloadwallet()
+
+    def test_encrypted_wallets(self):
+        self.log.info("Test encrypted wallets")
+
+        # Encrypt wallet 0
+        self.nodes[0].createwallet("encrypted", passphrase=self.default_wallet_pass)
+        wallet = self.nodes[0].get_wallet_rpc("encrypted")
+
+        self.log.info("- Test that descriptors are the same when unlocked and locked.")
+        with WalletUnlock(wallet, self.default_wallet_pass ):
+            addr = wallet.getnewaddress()
+            unlocked_info = wallet.getaddressinfo(addr)
+        assert 'hdmasterfingerprint' in wallet.getaddressinfo(wallet.getnewaddress())
+        locked_info = wallet.getaddressinfo(addr)
+        assert_equal(unlocked_info['desc'], locked_info['desc'])
+
+        self.log.info("- Test that getnewaddress still works after keypool is exhausted in an encrypted wallet")
+        for _ in range(500):
+            wallet.getnewaddress()
+
+        self.log.info("- Test that unlock is needed when deriving only hardened keys in an encrypted wallet")
+        with WalletUnlock(wallet, self.default_wallet_pass):
+            wallet.importdescriptors([{
+                "desc": descsum_create(f"wpkh({ExtendedPrivateKey.generate().to_string()}/0h/*h)"),
+                "timestamp": "now",
+                "range": [0,10],
+                "active": True
+            }])
+        # Exhaust keypool of 100
+        for _ in range(100):
+            wallet.getnewaddress(address_type='bech32')
+        # This should now error
+        assert_raises_rpc_error(-12, "Keypool ran out, please call keypoolrefill first", wallet.getnewaddress, '', 'bech32')
 
     def run_test(self):
         self.generate(self.nodes[0], COINBASE_MATURITY + 1)
@@ -154,43 +187,7 @@ class WalletDescriptorTest(BitcoinTestFramework):
         addr = recv_wrpc.getnewaddress()
         send_wrpc.sendtoaddress(addr, 10)
 
-        self.log.info("Test encryption")
-        # Get the master fingerprint before encrypt
-        info1 = send_wrpc.getaddressinfo(send_wrpc.getnewaddress())
-
-        # Encrypt wallet 0
-        send_wrpc.encryptwallet('pass')
-        with WalletUnlock(send_wrpc, "pass"):
-            addr = send_wrpc.getnewaddress()
-            info2 = send_wrpc.getaddressinfo(addr)
-            assert_not_equal(info1['hdmasterfingerprint'], info2['hdmasterfingerprint'])
-        assert 'hdmasterfingerprint' in send_wrpc.getaddressinfo(send_wrpc.getnewaddress())
-        info3 = send_wrpc.getaddressinfo(addr)
-        assert_equal(info2['desc'], info3['desc'])
-
-        self.log.info("Test that getnewaddress still works after keypool is exhausted in an encrypted wallet")
-        for _ in range(500):
-            send_wrpc.getnewaddress()
-
-        self.log.info("Test that unlock is needed when deriving only hardened keys in an encrypted wallet")
-        with WalletUnlock(send_wrpc, "pass"):
-            send_wrpc.importdescriptors([{
-                "desc": descsum_create(f"wpkh({ExtendedPrivateKey.generate().to_string()}/0h/*h)"),
-                "timestamp": "now",
-                "range": [0,10],
-                "active": True
-            }])
-        # Exhaust keypool of 100
-        for _ in range(100):
-            send_wrpc.getnewaddress(address_type='bech32')
-        # This should now error
-        assert_raises_rpc_error(-12, "Keypool ran out, please call keypoolrefill first", send_wrpc.getnewaddress, '', 'bech32')
-
-        self.log.info("Test born encrypted wallets")
-        self.nodes[0].createwallet('desc_enc', False, False, 'pass', False, True)
-        enc_rpc = self.nodes[0].get_wallet_rpc('desc_enc')
-        enc_rpc.getnewaddress() # Makes sure that we can get a new address from a born encrypted wallet
-
+        self.test_encrypted_wallets()
         self.log.info("Test blank descriptor wallets")
         self.nodes[0].createwallet(wallet_name='desc_blank', blank=True)
         blank_rpc = self.nodes[0].get_wallet_rpc('desc_blank')
