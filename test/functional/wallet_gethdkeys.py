@@ -19,8 +19,6 @@ class WalletGetHDKeyTest(BitcoinTestFramework):
     def set_test_params(self):
         self.setup_clean_chain = True
         self.num_nodes = 1
-        self.extra_args = [["-deprecatedrpc=encryptwallet"]]
-
 
     def skip_test_if_missing_module(self):
         self.skip_if_no_wallet()
@@ -53,29 +51,24 @@ class WalletGetHDKeyTest(BitcoinTestFramework):
             assert xprv in desc["desc"]
 
         self.log.info("HD pubkey can be retrieved from encrypted wallets")
-        prev_xprv = xprv
-        wallet.encryptwallet("pass")
-        # HD key is rotated on encryption, there should now be 2 HD keys
-        assert_equal(len(wallet.gethdkeys()), 2)
-        # New key is active, should be able to get only that one and its descriptors
-        xpub_info = wallet.gethdkeys(active_only=True)
+        self.nodes[0].createwallet("encrypted", passphrase=self.default_wallet_pass)
+        encrypted_wallet = self.nodes[0].get_wallet_rpc("encrypted")
+
+        # An encrypted wallet has 1 hdkey and it is active
+        assert_equal(len(encrypted_wallet.gethdkeys()), 1)
+        xpub_info = encrypted_wallet.gethdkeys(active_only=True)
         assert_equal(len(xpub_info), 1)
         assert_not_equal(xpub_info[0]["xpub"], xpub)
         assert "xprv" not in xpub_info[0]
         assert_equal(xpub_info[0]["has_private"], True)
 
         self.log.info("HD privkey can be retrieved from encrypted wallets")
-        assert_raises_rpc_error(-13, "Error: Please enter the wallet passphrase with walletpassphrase first", wallet.gethdkeys, private=True)
-        with WalletUnlock(wallet, "pass"):
-            xpub_info = wallet.gethdkeys(active_only=True, private=True)[0]
+        assert_raises_rpc_error(-13, "Error: Please enter the wallet passphrase with walletpassphrase first", encrypted_wallet.gethdkeys, private=True)
+        with WalletUnlock(encrypted_wallet, self.default_wallet_pass):
+            xpub_info = encrypted_wallet.gethdkeys(active_only=True, private=True)[0]
             assert_not_equal(xpub_info["xprv"], xprv)
-            for desc in wallet.listdescriptors(True)["descriptors"]:
-                if desc["active"]:
-                    # After encrypting, HD key was rotated and should appear in all active descriptors
-                    assert xpub_info["xprv"] in desc["desc"]
-                else:
-                    # Inactive descriptors should have the previous HD key
-                    assert prev_xprv in desc["desc"]
+            for desc in encrypted_wallet.listdescriptors(True)["descriptors"]:
+                assert xpub_info["xprv"] in desc["desc"]
 
     def test_ranged_imports(self):
         self.log.info("Keys of imported ranged descriptors appear in gethdkeys")
