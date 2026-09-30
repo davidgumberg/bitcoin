@@ -25,7 +25,6 @@ EMPTY_PASSPHRASE_MSG = "Empty string given as passphrase, wallet will not be enc
 class CreateWalletTest(BitcoinTestFramework):
     def set_test_params(self):
         self.num_nodes = 1
-        self.extra_args = [["-deprecatedrpc=encryptwallet"]]
 
     def skip_test_if_missing_module(self):
         self.skip_if_no_wallet()
@@ -113,40 +112,32 @@ class CreateWalletTest(BitcoinTestFramework):
         w3.getnewaddress()
         w3.getrawchangeaddress()
 
-        self.log.info("Test blank creation with privkeys enabled and then encryption")
+        self.log.info("Test blank creation with privkeys enabled")
         self.nodes[0].createwallet(wallet_name='w4', disable_private_keys=False, blank=True)
         w4 = node.get_wallet_rpc('w4')
         assert_equal(w4.getwalletinfo()['keypoolsize'], 0)
         assert_raises_rpc_error(-4, "Error: This wallet has no available keys", w4.getnewaddress)
         assert_raises_rpc_error(-4, "Error: This wallet has no available keys", w4.getrawchangeaddress)
-        # Encrypt the wallet. Nothing should change about the keypool
-        w4.encryptwallet('pass')
-        assert_raises_rpc_error(-4, "Error: This wallet has no available keys", w4.getnewaddress)
-        assert_raises_rpc_error(-4, "Error: This wallet has no available keys", w4.getrawchangeaddress)
-        with WalletUnlock(w4, "pass"):
-            # Now set a seed and it should work. Wallet should also be encrypted
-            w4.importdescriptors([{
-                'desc': descsum_create(f'wpkh({ExtendedPrivateKey.generate().to_string()}/0h/*)'),
-                'timestamp': 'now',
-                'active': True
-            },
-            {
-                'desc': descsum_create(f'wpkh({ExtendedPrivateKey.generate().to_string()}/1h/*)'),
-                'timestamp': 'now',
-                'active': True,
-                'internal': True
-            }])
-            w4.getnewaddress()
-            w4.getrawchangeaddress()
 
-        self.log.info("Test blank creation with privkeys disabled and then encryption")
+        # Now set a seed and it should work.
+        w4.importdescriptors([{
+            'desc': descsum_create(f'wpkh({ExtendedPrivateKey.generate().to_string()}/0h/*)'),
+            'timestamp': 'now',
+            'active': True
+        },
+        {
+            'desc': descsum_create(f'wpkh({ExtendedPrivateKey.generate().to_string()}/1h/*)'),
+            'timestamp': 'now',
+            'active': True,
+            'internal': True
+        }])
+        w4.getnewaddress()
+        w4.getrawchangeaddress()
+
+        self.log.info("Test blank creation with privkeys disabled")
         self.nodes[0].createwallet(wallet_name='w5', disable_private_keys=True, blank=True)
         w5 = node.get_wallet_rpc('w5')
         assert_equal(w5.getwalletinfo()['keypoolsize'], 0)
-        assert_raises_rpc_error(-4, "Error: This wallet has no available keys", w5.getnewaddress)
-        assert_raises_rpc_error(-4, "Error: This wallet has no available keys", w5.getrawchangeaddress)
-        # Encrypt the wallet
-        assert_raises_rpc_error(-16, "Error: wallet does not contain private keys, nothing to encrypt.", w5.encryptwallet, 'pass')
         assert_raises_rpc_error(-4, "Error: This wallet has no available keys", w5.getnewaddress)
         assert_raises_rpc_error(-4, "Error: This wallet has no available keys", w5.getrawchangeaddress)
 

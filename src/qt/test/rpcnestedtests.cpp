@@ -101,8 +101,6 @@ void RPCNestedTests::rpcNestedTests()
     QVERIFY(filtered == "walletpassphrase(…)");
     RPCConsole::RPCParseCommandLine(nullptr, result, "walletpassphrasechange(help(walletpassphrasechange(abc)))", false, &filtered);
     QVERIFY(filtered == "walletpassphrasechange(…)");
-    RPCConsole::RPCParseCommandLine(nullptr, result, "help(encryptwallet(abc, def))", false, &filtered);
-    QVERIFY(filtered == "help(encryptwallet(…))");
 
     RPCConsole::RPCExecuteCommandLine(m_node, result, "rpcNestedTest");
     QVERIFY(result == "[]");

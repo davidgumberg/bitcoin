@@ -1088,7 +1088,6 @@ RPCMethod listunspent();
 RPCMethod walletpassphrase();
 RPCMethod walletpassphrasechange();
 RPCMethod walletlock();
-RPCMethod encryptwallet();
 
 // spend
 RPCMethod sendtoaddress();
@@ -1130,7 +1129,6 @@ std::span<const CRPCCommand> GetWalletRPCCommands()
         {"wallet", &createwalletdescriptor},
         {"wallet", &derivehdkey},
         {"wallet", &restorewallet},
-        {"wallet", &encryptwallet},
         {"wallet", &exportwatchonlywallet},
         {"wallet", &getaddressesbylabel},
         {"wallet", &getaddressinfo},

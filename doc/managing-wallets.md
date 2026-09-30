@@ -4,12 +4,11 @@
 
 ### 1.1 Creating the Wallet
 
-Since version 0.21, Bitcoin Core no longer has a default wallet.
 Wallets can be created with the `createwallet` RPC or with the `Create wallet` GUI menu item.
 
 In the GUI, the `Create a new wallet` button is displayed on the main screen when there is no wallet loaded. Alternatively, there is the option `File` ->`Create wallet`.
 
-The following command, for example, creates a descriptor wallet. More information about this command may be found by running `bitcoin-cli help createwallet`.
+The following command, for example, creates an unecrypted descriptor wallet. More information about this command may be found by running `bitcoin-cli help createwallet`.
 
 ```
 $ bitcoin-cli createwallet "wallet-01"
@@ -25,7 +24,7 @@ By default, wallets are created in the `wallets` folder of the data directory, w
 | Windows          | `C:\Users\<user>\AppData\Local\Bitcoin\wallets`             |
 | macOS            | `/Users/<user>/Library/Application Support/Bitcoin/wallets` |
 
-### 1.2 Encrypting the Wallet
+### 1.2 Creating an encrypted wallet
 
 The `wallet.dat` file is not encrypted by default and is, therefore, vulnerable if an attacker gains access to the device where the wallet or the backups are stored.
 
@@ -33,29 +32,19 @@ Wallet encryption may prevent unauthorized access. However, this significantly i
 
 Wallet encryption may also not protect against more sophisticated attacks. An attacker can, for example, obtain the password by installing a keylogger on the user's machine.
 
-After encrypting the wallet or changing the passphrase, a new backup needs to be created immediately. The reason is that the keypool is flushed and a new HD seed is generated after encryption. Any bitcoins received by the new seed cannot be recovered from the previous backups.
+An encrypted wallet can be created by passing a `passphrase` argument to `createwallet`. Please note that an unencrypted wallet cannot be later made to be an encrypted wallet.
 
-The wallet's private key may be encrypted with the following command:
-
-```
-$ bitcoin-cli -rpcwallet="wallet-01" encryptwallet "passphrase"
+```console
+$ bitcoin-cli -named createwallet wallet_name="wallet-01" passphrase="passphrase"
 ```
 
-Once encrypted, the passphrase can be changed with the `walletpassphrasechange` command.
+The passphrase of an encrypted wallet can be changed with the `walletpassphrasechange` command.
 
 ```
 $ bitcoin-cli -rpcwallet="wallet-01" walletpassphrasechange "oldpassphrase" "newpassphrase"
 ```
 
-The argument passed to `-rpcwallet` is the name of the wallet to be encrypted.
-
 Only the wallet's private key is encrypted. All other wallet information, such as transactions, is still visible.
-
-The wallet's private key can also be encrypted in the `createwallet` command via the `passphrase` argument:
-
-```
-$ bitcoin-cli -named createwallet wallet_name="wallet-01" passphrase="passphrase"
-```
 
 Note that if the passphrase is lost, all the coins in the wallet will also be lost forever.
 

@@ -548,6 +548,7 @@ class WalletMigrationTest(BitcoinTestFramework):
         wallet = self.create_legacy_wallet("encrypted")
         default = self.master_node.get_wallet_rpc(self.default_wallet_name)
 
+        # This can be left as-is, since `wallet` is a handle to a legacy node
         wallet.encryptwallet("pass")
         addr = wallet.getnewaddress()
         txid = default.sendtoaddress(addr, 1)
