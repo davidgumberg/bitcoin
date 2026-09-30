@@ -836,9 +836,11 @@ bool CWallet::EncryptWallet(const SecureString& strWalletPassphrase)
 {
     // Only descriptor wallets can be encrypted
     Assert(IsWalletFlagSet(WALLET_FLAG_DESCRIPTORS));
+    Assume(m_spk_managers.size() == 0);
 
-    if (HasEncryptionKeys())
+    if (HasEncryptionKeys()) {
         return false;
+    }
 
     CKeyingMaterial plain_master_key;
 
@@ -861,11 +863,6 @@ bool CWallet::EncryptWallet(const SecureString& strWalletPassphrase)
         if (!RunWithinTxn(GetDatabase(), /*process_desc=*/"wallet encryption", [&](WalletBatch& batch) {
                 if (!batch.WriteMasterKey(new_master_key_id, master_key)) {
                     return false;
-                }
-                for (const auto& spk_man_pair : m_spk_managers) {
-                    if (!spk_man_pair.second->Encrypt(plain_master_key, &batch)) {
-                        return false;
-                    }
                 }
                 return true;
             })) {
